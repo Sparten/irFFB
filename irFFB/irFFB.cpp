@@ -17,13 +17,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "irFFB.h"
 #include "Settings.h"
-#include "jetseat.h"
-#include "fan.h"
-#include "hidguardian.h"
 #include "public.h"
 #include "yaml_parser.h"
 #include "vjoyinterface.h"
-
+#include "shlwapi.h"
+#include <Hidclass.h>
 #define MAX_LOADSTRING 100
 
 #define STATUS_CONNECTED_PART 0
@@ -60,9 +58,6 @@ LogiLedData logiLedData;
 DIEFFESCAPE logiEscape;
 
 Settings settings;
-JetSeat *jetseat;
-Fan *fan;
-HidGuardian *hidGuardian;
 
 float firc6[] = {
     0.1295867f, 0.2311436f, 0.2582509f, 0.1923936f, 0.1156718f, 0.0729534f
@@ -609,22 +604,6 @@ int APIENTRY wWinMain(
 
     UNREFERENCED_PARAMETER(hPrevInstance);
 
-    if (StrStrW(lpCmdLine, CMDLINE_HGSVC)) {
-
-        SERVICE_TABLE_ENTRYW SvcDispatchTable[] = {
-            { SVCNAME, (LPSERVICE_MAIN_FUNCTION)HidGuardian::SvcMain },
-            { NULL, NULL }
-        };
-
-        if (!StartServiceCtrlDispatcherW(SvcDispatchTable)) {
-            HidGuardian::svcReportError(L"Failed to start service ctrl dispatcher");
-            exit(1);
-        }
-
-        exit(0);
-
-    }
-
     globalMutex = CreateMutex(NULL, false, L"Global\\irFFB_Mutex");
 
     if (GetLastError() == ERROR_ALREADY_EXISTS)
@@ -701,19 +680,6 @@ int APIENTRY wWinMain(
 
     if (!InitInstance(hInstance, nCmdShow))
         return FALSE;
-
-    hidGuardian = HidGuardian::init(GetCurrentProcessId());
-    if (StrStrW(lpCmdLine, CMDLINE_HGINST))
-        hidGuardian->install();
-    else if (StrStrW(lpCmdLine, CMDLINE_HGREPAIR))
-        hidGuardian->repairService();
-
-    fan = Fan::init();
-    jetseat = JetSeat::init();
-    if (!jetseat) {
-        DeleteMenu(GetMenu(mainWnd), ID_SETTINGS_JETSEAT, MF_BYCOMMAND);
-        DrawMenuBar(mainWnd);
-    }
 
     memset(car, 0, sizeof(car));
     setCarStatus(car);
@@ -832,7 +798,6 @@ int APIENTRY wWinMain(
                 setOnTrackStatus(onTrack);
                 lastTorque = lastSuspForce = 0.0f;
                 resetForces();
-                fan->setManualSpeed();
                 clippingReport();
             }
 
@@ -850,15 +815,6 @@ int APIENTRY wWinMain(
             if (*trackSurface != lastTrackSurface) {
                 debug(L"Track surface is now: %d", *trackSurface);
                 lastTrackSurface = *trackSurface;
-            }
-
-            if (jetseat && jetseat->isEnabled()) {
-                if (*isOnTrack && *rpm > 0.0f) {
-                    jetseat->startEngineEffect();
-                    jetseat->updateEngineEffect(*rpm * 100.0f / redline);
-                }
-                else                
-                    jetseat->stopEngineEffect();
             }
 
             if (ffdevice && logiWheel)
@@ -904,10 +860,7 @@ int APIENTRY wWinMain(
                                     halfMaxForce
                                 );
                         }
-                    }
-                    
-                    if (jetseat && jetseat->isEnabled() && asa > sopOffset)
-                        jetseat->yawEffect(sa);
+                    }                   
 
                     if (usCoefs != nullptr && settings.getUndersteerFactor() > 0.0f) {
 
@@ -993,14 +946,6 @@ int APIENTRY wWinMain(
                                     (RFshockDeflST[STmaxIdx] - RFshockDeflLast)
                                 ) * bumpsFactor * 0.25f;
                         }
-
-                        if (jetseat && jetseat->isEnabled()) {
-                            float LFd = LFshockDeflST[STmaxIdx] - LFshockDeflLast;
-                            float RFd = RFshockDeflST[STmaxIdx] - RFshockDeflLast;
-
-                            if (LFd > 0.0025f || RFd > 0.0025f)
-                                jetseat->fBumpEffect(LFd * 220.0f, RFd * 220.0f);
-                        }
                         
                     }
 
@@ -1043,27 +988,10 @@ int APIENTRY wWinMain(
                         else 
                             suspForce = (CFshockDeflST[STmaxIdx] - CFshockDeflLast) * bumpsFactor * 0.25f;
 
-                        if (jetseat && jetseat->isEnabled()) {
-                            float CFd = CFshockDeflST[STmaxIdx] - CFshockDeflLast;
-                            if  (CFd > 0.0025f)
-                                jetseat->fBumpEffect(CFd * 220.0f, CFd * 220.0f);
-                        }
-
                     }
                     
                     CFshockDeflLast = CFshockDeflST[STmaxIdx];
 
-                }
-
-                if (jetseat && jetseat->isEnabled() && LRshockDeflST != nullptr) {
-                    float LRd = LRshockDeflST[STmaxIdx] - LRshockDeflLast;
-                    float RRd = RRshockDeflST[STmaxIdx] - RRshockDeflLast;
-
-                    if (LRd > 0.0025f || RRd > 0.0025f)
-                        jetseat->rBumpEffect(LRd * 220.0f, RRd * 220.0f);
-
-                    LRshockDeflLast = LRshockDeflST[STmaxIdx];
-                    RRshockDeflLast = RRshockDeflST[STmaxIdx];
                 }
 
                 stopped = false;
@@ -1071,14 +999,6 @@ int APIENTRY wWinMain(
             }
             else
                 stopped = true;
-
-            if (*isOnTrack)
-                fan->setSpeed(*speed);
-
-            if (jetseat && jetseat->isEnabled() && *gear != lastGear) {
-                jetseat->gearEffect();
-                lastGear = *gear;
-            }
 
             for (int i = 0; i < DIRECT_INTERP_SAMPLES; i++) {
 
@@ -1208,7 +1128,6 @@ int APIENTRY wWinMain(
             onTrack = false;
             setOnTrackStatus(onTrack);
             setConnectedStatus(false);
-            fan->setManualSpeed();
             timeEndPeriod(1);
             if (settings.getUseCarSpecific() && car[0] != 0) 
                 settings.writeSettingsForCar(car);
@@ -1496,15 +1415,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 case IDM_EXIT:
                     DestroyWindow(hWnd);
                     break;
-                case ID_SETTINGS_JETSEAT:
-                    if (jetseat)
-                        jetseat->createWindow(hInst);
-                    break;
-                case ID_SETTINGS_FAN:
-                    fan->createWindow(hInst);
-                    break;
-                case ID_SETTINGS_HIDGUARDIAN:
-                    hidGuardian->createWindow(hInst);
                 default:
                     if (HIWORD(wParam) == CBN_SELCHANGE) {
                         if (wnd == settings.getDevWnd()) {
@@ -1513,8 +1423,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                             if (oldDevice != GUID_NULL)
                                 vidpid = getDeviceVidPid(ffdevice); 
                             settings.setFfbDevice(SendMessage((HWND)lParam, CB_GETCURSEL, 0, 0));
-                            if (vidpid != 0 && oldDevice != settings.getFfbDevice())
-                                hidGuardian->removeDevice(LOWORD(vidpid), HIWORD(vidpid), false);
                         }
                         else if (wnd == settings.getFfbWnd())
                             settings.setFfbType(SendMessage((HWND)lParam, CB_GETCURSEL, 0, 0));
@@ -1688,7 +1596,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             else
                 settings.writeGenericSettings();
             settings.writeRegSettings();
-            hidGuardian->stop(GetCurrentProcessId());
             if (debugHnd != INVALID_HANDLE_VALUE)
                 CloseHandle(debugHnd);
             CloseHandle(globalMutex);
@@ -2090,9 +1997,6 @@ void initDirectInput() {
 
     LeaveCriticalSection(&effectCrit);
 
-    if (vidpid != 0)
-        hidGuardian->setDevice(LOWORD(vidpid), HIWORD(vidpid));
-
 }
 
 void releaseDirectInput() {
@@ -2198,7 +2102,7 @@ inline void setFFB(int mag) {
 
 bool initVJD() {
 
-    WORD verDrv;
+    SHORT verDrv;
     int maxVjDev;
     VjdStat vjdStatus = VJD_STAT_UNKN;
 
@@ -2206,8 +2110,11 @@ bool initVJD() {
         text(L"vJoy not enabled!");
         return false;
     }
-    else
-        text(L"vJoy driver version %04x init OK", &verDrv);
+    else {
+        verDrv = GetvJoyVersion();
+        text(L"vJoy driver version %04x init OK", verDrv);
+    }
+        
 
     vjDev = 1;
 
@@ -2288,9 +2195,6 @@ void initAll() {
 void releaseAll() {
 
     releaseDirectInput();
-
-    if (fan)
-        fan->setSpeed(0);
 
     RelinquishVJD(vjDev);
 

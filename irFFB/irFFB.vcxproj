@@ -22,7 +22,7 @@
     <ProjectGuid>{8BC973E0-815D-4BA3-A461-E09201F29869}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>irFFB</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -34,9 +34,9 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>v142</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -158,21 +158,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="fan.cpp" />
-    <ClCompile Include="hidguardian.cpp" />
     <ClCompile Include="irFFB.cpp" />
     <ClCompile Include="irsdk_utils.cpp" />
-    <ClCompile Include="jetseat.cpp" />
     <ClCompile Include="settings.cpp" />
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="vJoyInterface.cpp" />
     <ClCompile Include="yaml_parser.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="fan.h" />
-    <ClInclude Include="hidguardian.h" />
-    <ClInclude Include="IUberwoorf.h" />
-    <ClInclude Include="jetseat.h" />
     <ClInclude Include="Settings.h" />
     <ClInclude Include="irFFB.h" />
     <ClInclude Include="irsdk_defines.h" />
@@ -189,12 +182,6 @@
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="irFFB.rc" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="..\..\..\..\irFFB\HGInstaller64.dat">
-      <FileType>Document</FileType>
-    </None>
-    <None Include="HGInstaller64.dat" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

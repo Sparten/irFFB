@@ -95,7 +95,7 @@ class Settings {
         void writeGenericSettings();
         void readSettingsForCar(char *);
         void writeSettingsForCar(char *);
-        PWSTR getLogPath();
+        std::wstring getLogPath();
 
     private:
         HWND devWnd, ffbWnd;
@@ -111,7 +111,7 @@ class Settings {
         HANDLE debugHnd;
 
         wchar_t *ffbTypeString(int);
-        PWSTR getIniPath();
+        std::wstring getIniPath();
         void writeWithNewline(std::ofstream &, char *);
 
 };

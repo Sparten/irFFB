@@ -2,7 +2,9 @@
 #include <fstream>
 #include <iostream>
 #include <string>
-
+#include <filesystem>
+#include <format>
+namespace fs = std::filesystem;
 HKEY Settings::getSettingsRegKey() {
 
     HKEY key;
@@ -464,9 +466,9 @@ void Settings::writeGenericSettings() {
 
 void Settings::readSettingsForCar(char *car) {
 
-    PWSTR path = getIniPath();
+    std::wstring path = getIniPath();
 
-    if (path == nullptr) {
+    if (path.empty()) {
         text(L"Failed to locate documents folder, can't read ini");
         return;
     }
@@ -513,22 +515,21 @@ void Settings::readSettingsForCar(char *car) {
 
 DONE:
     iniFile.close();
-    delete[] path;
 
 }
 
 void Settings::writeSettingsForCar(char *car) {
 
-    PWSTR path = getIniPath();
+    std::wstring path = getIniPath();
 
-    if (path == nullptr) {
+    if (path.empty()) {
         text(L"Failed to locate documents folder, can't write ini");
         return;
     }
 
-    PWSTR tmpPath = new wchar_t[lstrlen(path) + 5];
-    lstrcpy(tmpPath, path);
-    lstrcat(tmpPath, L".tmp");
+    std::wstring tmpPath(path);
+    tmpPath.append(L".tmp");
+
 
     std::ifstream iniFile(path);
     std::ofstream tmpFile(tmpPath);
@@ -617,11 +618,9 @@ MOVE:
     iniFile.close();
     tmpFile.close();
 
-    if (!MoveFileEx(tmpPath, path, MOVEFILE_REPLACE_EXISTING))
+    if (!MoveFileEx(tmpPath.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING))
         text(L"Failed to update ini file, error %d", GetLastError());
 
-    delete[] path;
-    delete[] tmpPath;
 
 }
 
@@ -635,50 +634,48 @@ wchar_t *Settings::ffbTypeString(int type) {
     }
 }
 
-PWSTR Settings::getIniPath() {
+std::wstring Settings::getIniPath() {
 
     PWSTR docsPath;
-    wchar_t *path;
-
     if (SHGetKnownFolderPath(FOLDERID_Documents, 0, NULL, &docsPath) != S_OK)
-        return nullptr;
+        return std::wstring(L"");
 
-    path = new wchar_t[lstrlen(docsPath) + lstrlen(INI_PATH) + 1];
-
-    lstrcpyW(path, docsPath);
-    lstrcatW(path, INI_PATH);
+    fs::path fsPath = { docsPath };
     CoTaskMemFree(docsPath);
+    fsPath.append("irFFB");
+    if (!fs::exists(fsPath))
+    {
+        fs::create_directory(fsPath);
+    }
 
-    return path;
-
+    fsPath.append(INI_PATH);
+    ::debug((wchar_t*)fsPath.wstring().c_str(), L"");
+    return fsPath.wstring();
 }
 
-PWSTR Settings::getLogPath() {
+std::wstring Settings::getLogPath() {
 
     PWSTR docsPath;
-    wchar_t buf[64];
-    wchar_t *path;
     SYSTEMTIME lt;
 
     if (SHGetKnownFolderPath(FOLDERID_Documents, 0, NULL, &docsPath) != S_OK)
-        return nullptr;
+        return std::wstring(L"");
+
+    fs::path fsPath = { docsPath };
+    CoTaskMemFree(docsPath);
+    fsPath.append("irFFB");
+    fsPath.append("Log");
+    if (!fs::exists(fsPath))
+    {
+        fs::create_directories(fsPath);
+    }
 
     GetLocalTime(&lt);
-    
-    lstrcpyW(buf, L"\\irFFB-");
-    int len = wcslen(buf) * sizeof(wchar_t);
-    StringCbPrintf(
-        buf + wcslen(buf), sizeof(buf) - len, L"%d-%02d-%02d-%02d-%02d-%02d.log",
-        lt.wYear, lt.wMonth, lt.wDay, lt.wHour, lt.wMinute, lt.wSecond
-    );
+    std::string fmtFileName = std::format("irFFB-%d-%02d-%02d-%02d-%02d-%02d.log", lt.wYear, lt.wMonth, lt.wDay, lt.wHour, lt.wMinute, lt.wSecond);
+    fsPath.append(fmtFileName);
 
-    path = new wchar_t[lstrlen(docsPath) + lstrlen(buf) + 1];
-
-    lstrcpyW(path, docsPath);
-    lstrcatW(path, buf);
-    CoTaskMemFree(docsPath);
-
-    return path;
+    ::debug((wchar_t*)fsPath.wstring().c_str(), L"");
+    return fsPath.wstring();
 
 }
 

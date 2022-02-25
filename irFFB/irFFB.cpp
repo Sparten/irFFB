@@ -1445,7 +1445,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                         else if (wnd == settings.getDebugWnd()) {
                             settings.setDebug(!oldValue);
                             if (settings.getDebug()) {
-                                debugHnd = CreateFileW(settings.getLogPath(), GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                                debugHnd = CreateFileW(settings.getLogPath().c_str(), GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
                                 int chars = SendMessageW(textWnd, WM_GETTEXTLENGTH, 0, 0);
                                 wchar_t *buf = new wchar_t[chars + 1], *str = buf;
                                 SendMessageW(textWnd, WM_GETTEXT, chars + 1, (LPARAM)buf);

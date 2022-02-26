@@ -1375,7 +1375,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     mainWnd = CreateWindowW(
         szWindowClass, szTitle,
         WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME,
-        CW_USEDEFAULT, CW_USEDEFAULT, 864, 760,
+        CW_USEDEFAULT, CW_USEDEFAULT, 864, 770,
         NULL, NULL, hInst, NULL
     );
 
@@ -1424,7 +1424,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
         checkbox(mainWnd, L"Debug logging?", 460, 560)
     );
 
-    wndFFBAmount = progressbar(mainWnd, L"Corrent applied force", 32, 620, 376, IR_MAX);
+    wndFFBAmount = progressbar(mainWnd, L"Current applied force", 32, 620, 376, IR_MAX);
     wndFFBClipping = progressbar(mainWnd, L"Clipping force", 460, 620, 336, progressClippingMax);
 
     int statusParts[] = { 256, 424, 864 };

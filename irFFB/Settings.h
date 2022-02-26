@@ -82,6 +82,11 @@ class Settings {
         bool getRunOnStartup() { return runOnStartup; };
         void setStartMinimised(bool);
         bool getStartMinimised() { return startMinimised; };
+        void setWindowPosX(int X) { windowPosX = X; };
+        int getWindowPosX(){ return windowPosX; };
+        void setWindowPosY(int Y) { windowPosY = Y; };
+        int getWindowPosY() { return windowPosY; };
+
         void setDebug(bool);
         bool getDebug() { return debug; };
         float getBumpsSetting();
@@ -109,6 +114,8 @@ class Settings {
         GUID devGuid = GUID_NULL, ffdevices[MAX_FFB_DEVICES];
         wchar_t strbuf[64];
         HANDLE debugHnd;
+        int windowPosX, windowPosY;
+
 
         wchar_t *ffbTypeString(int);
         std::wstring getIniPath();

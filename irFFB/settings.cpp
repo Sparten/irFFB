@@ -114,6 +114,7 @@ void Settings::setRunOnStartupWnd(HWND wnd) { runOnStartupWnd = wnd; }
 void Settings::setStartMinimisedWnd(HWND wnd) { startMinimisedWnd = wnd; }
 void Settings::setDebugWnd(HWND wnd) { debugWnd = wnd; }
 
+
 void Settings::clearFfbDevices() {
     memset(ffdevices, 0, sizeof(ffdevices));
     ffdeviceIdx = 0;
@@ -368,6 +369,8 @@ void Settings::readRegSettings(char *car) {
         setStartMinimised(false);
         setRunOnStartup(false);
         setUseCarSpecific(false, car);
+        setWindowPosX(30);
+        setWindowPosY(30);
         return;
     }
 
@@ -402,6 +405,8 @@ void Settings::readGenericSettings() {
         setUndersteerFactor(0.0f, (HWND)-1);
         setUndersteerOffset(0.0f, (HWND)-1);
         setUse360ForDirect(true);
+        setWindowPosX(30);
+        setWindowPosY(30);
         return;
     }
 
@@ -415,7 +420,8 @@ void Settings::readGenericSettings() {
     setUndersteerFactor(getRegSetting(key, L"understeerFactor", 0.0f), (HWND)-1);
     setUndersteerOffset(getRegSetting(key, L"understeerOffset", 0.0f), (HWND)-1);
     setUse360ForDirect(getRegSetting(key, L"use360ForDirect", true));
-
+    setWindowPosX(getRegSetting(key, L"windowPosX", 30));
+    setWindowPosY(getRegSetting(key, L"windowPosY", 30));
     RegCloseKey(key);
 
 }
@@ -437,6 +443,8 @@ void Settings::writeRegSettings() {
     setRegSetting(key, L"reduceWhenParked", getReduceWhenParked());
     setRegSetting(key, L"runOnStartup", getRunOnStartup());
     setRegSetting(key, L"startMinimised", getStartMinimised());
+    setRegSetting(key, L"windowPosX", getWindowPosX());
+    setRegSetting(key, L"windowPosY", getWindowPosY());
 
     RegCloseKey(key);
 

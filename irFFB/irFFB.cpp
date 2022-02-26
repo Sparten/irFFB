@@ -59,6 +59,12 @@ DIEFFESCAPE logiEscape;
 
 Settings settings;
 
+#define ID_SMOOTHPROGRESSCTRL	402
+HWND wndFFBAmount;
+HWND wndFFBClipping;
+
+int progressClippingMax = 500;
+
 float firc6[] = {
     0.1295867f, 0.2311436f, 0.2582509f, 0.1923936f, 0.1156718f, 0.0729534f
 };
@@ -687,12 +693,35 @@ int APIENTRY wWinMain(
     setOnTrackStatus(false);
     settings.readGenericSettings();
     settings.readRegSettings(car);
+    
+
+    int posX = settings.getWindowPosX();
+
+    int posY = settings.getWindowPosY();
+
+    RECT workArea;
+    SystemParametersInfo(SPI_GETWORKAREA, 0, &workArea, 0);
+    posX += workArea.left;
+    posY += workArea.top;
+
+    // make sure the window is not completely out of sight
+    /*int max_x = GetSystemMetrics(SM_CXSCREEN) -
+        GetSystemMetrics(SM_CXICON);
+    int max_y = GetSystemMetrics(SM_CYSCREEN) -
+        GetSystemMetrics(SM_CYICON);
+
+    posX = min(posX, max_x);
+    posY = min(posY, max_y);
+
+    SetWindowPos(mainWnd, nullptr, posX, posY, 864, 760, 0);*/
 
     if (settings.getStartMinimised())
         minimise();
     else
+    {
         restore();
-
+    }
+        
     enumDirectInput();
 
     LARGE_INTEGER start;
@@ -1310,6 +1339,33 @@ HWND checkbox(HWND parent, wchar_t *name, int x, int y) {
 
 }
 
+
+HWND progressbar(HWND parent, wchar_t* name, int x, int y, int width, int max)
+{   
+    CreateWindowW(
+        L"STATIC", name,
+        WS_CHILD | WS_VISIBLE,
+        x, y, 300, 20, parent, NULL, hInst, NULL
+    );
+    
+    HWND hWnd  = ::CreateWindowEx(
+        0,
+        PROGRESS_CLASS,
+        name,
+        WS_CHILD | WS_VISIBLE | PBS_SMOOTH,
+        x,
+        y + 20,
+        width,
+        30,
+        parent,
+        (HMENU)ID_SMOOTHPROGRESSCTRL,
+        hInst,
+        NULL);
+    ::SendMessage(hWnd, PBM_SETRANGE32, 0 ,(WPARAM)(INT)max);
+
+    return hWnd;
+}
+
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 
     DEV_BROADCAST_DEVICEINTERFACE devFilter;
@@ -1319,7 +1375,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     mainWnd = CreateWindowW(
         szWindowClass, szTitle,
         WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME,
-        CW_USEDEFAULT, CW_USEDEFAULT, 864, 720,
+        CW_USEDEFAULT, CW_USEDEFAULT, 864, 760,
         NULL, NULL, hInst, NULL
     );
 
@@ -1368,6 +1424,9 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
         checkbox(mainWnd, L"Debug logging?", 460, 560)
     );
 
+    wndFFBAmount = progressbar(mainWnd, L"Corrent applied force", 32, 620, 376, IR_MAX);
+    wndFFBClipping = progressbar(mainWnd, L"Clipping force", 460, 620, 336, progressClippingMax);
+
     int statusParts[] = { 256, 424, 864 };
 
     statusWnd = CreateWindowEx(
@@ -1384,7 +1443,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
         mainWnd, NULL, hInst, NULL
     );
     SendMessage(textWnd, EM_SETLIMITTEXT, WPARAM(256000), 0);
-
+    
     ShowWindow(mainWnd, SW_HIDE);
     UpdateWindow(mainWnd);
 
@@ -1563,6 +1622,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 break;
             }
                     
+        }
+        break;
+        case WM_WINDOWPOSCHANGED:
+        {
+            WINDOWPOS* winPos = (WINDOWPOS*)lParam;
+            settings.setWindowPosX(winPos->x);
+            settings.setWindowPosY(winPos->y);
         }
         break;
 
@@ -2075,11 +2141,16 @@ inline void setFFB(int mag) {
     if (!effect)
         return;
 
-    if (mag <= -IR_MAX) {
+    int clippedAmmount = 0;
+    
+    if (mag <= -IR_MAX) 
+    {
+        clippedAmmount = mag - -IR_MAX ;
         mag = -IR_MAX;
         clippedSamples++;
     }
     else if (mag >= IR_MAX) {
+        clippedAmmount =  mag - IR_MAX;
         mag = IR_MAX;
         clippedSamples++;
     }
@@ -2098,6 +2169,13 @@ inline void setFFB(int mag) {
 
     ffbMag = mag;
 
+    ::SendMessage(wndFFBAmount, PBM_SETPOS, (WPARAM)(INT)abs(mag), 0);
+    if(clippedAmmount > progressClippingMax)
+    {
+        progressClippingMax = clippedAmmount;
+        ::SendMessage(wndFFBClipping, PBM_SETRANGE32, 0, (WPARAM)(INT)progressClippingMax);
+    }       
+    ::SendMessage(wndFFBClipping, PBM_SETPOS, (WPARAM)(INT)abs(clippedAmmount), 0);
 }
 
 bool initVJD() {

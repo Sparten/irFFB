@@ -107,6 +107,8 @@ void Settings::setSopWnd(sWins_t *wnd) { sopWnd = wnd; }
 void Settings::setSopOffsetWnd(sWins_t *wnd) { sopOffsetWnd = wnd; }
 void Settings::setUndersteerWnd(sWins_t *wnd) { understeerWnd = wnd; }
 void Settings::setUndersteerOffsetWnd(sWins_t *wnd) { understeerOffsetWnd = wnd; }
+void Settings::setUndersteerYawRateMultWnd(sWins_t* wnd) { understeerYawRateMultWnd = wnd; }
+void Settings::setUndersteerlatAccelDivWnd(sWins_t* wnd) { understeerlatAccelDivWnd = wnd; }
 void Settings::setUse360Wnd(HWND wnd) { use360Wnd = wnd; }
 void Settings::setReduceWhenParkedWnd(HWND wnd) { reduceWhenParkedWnd = wnd; }
 void Settings::setCarSpecificWnd(HWND wnd) { carSpecificWnd = wnd; }
@@ -267,6 +269,35 @@ bool Settings::setUndersteerOffset(float offset, HWND wnd) {
     return true;
 }
 
+bool Settings::setUndersteerYawRateMult(float mul, HWND wnd)
+{
+    if (mul < understeerYawRateMultWnd->min || mul > understeerYawRateMultWnd->max)
+        return false;
+
+    understeerYawRateMult = mul;
+    if (wnd != understeerYawRateMultWnd->trackbar)
+        SendMessage(understeerYawRateMultWnd->trackbar, TBM_SETPOS, TRUE, (int)mul);
+    if (wnd != understeerYawRateMultWnd->value) {
+        swprintf_s(strbuf, L"%.1f", mul);
+        SendMessage(understeerYawRateMultWnd->value, WM_SETTEXT, NULL, LPARAM(strbuf));
+    }
+    return true;
+}
+
+bool Settings::setUndersteerlatAccelDiv(float div, HWND wnd)
+{
+    if (div < understeerlatAccelDivWnd->min || div > understeerlatAccelDivWnd->max)
+        return false;
+    understeerlatAccelDiv = div;
+    if (wnd != understeerlatAccelDivWnd->trackbar)
+        SendMessage(understeerlatAccelDivWnd->trackbar, TBM_SETPOS, TRUE, (int)div);
+    if (wnd != understeerlatAccelDivWnd->value) {
+        swprintf_s(strbuf, L"%.1f", div);
+        SendMessage(understeerlatAccelDivWnd->value, WM_SETTEXT, NULL, LPARAM(strbuf));
+    }
+    return true;
+}
+
 void Settings::setUse360ForDirect(bool set) {
     use360ForDirect = set;
     SendMessage(use360Wnd, BM_SETCHECK, set ? BST_CHECKED : BST_UNCHECKED, NULL);
@@ -405,6 +436,8 @@ void Settings::readGenericSettings() {
         setUndersteerFactor(0.0f, (HWND)-1);
         setUndersteerOffset(0.0f, (HWND)-1);
         setUse360ForDirect(true);
+        setUndersteerlatAccelDiv(60.0f, (HWND)-1);
+        setUndersteerYawRateMult(0.0f, (HWND)-1);
         setWindowPosX(30);
         setWindowPosY(30);
         return;
@@ -420,6 +453,8 @@ void Settings::readGenericSettings() {
     setUndersteerFactor(getRegSetting(key, L"understeerFactor", 0.0f), (HWND)-1);
     setUndersteerOffset(getRegSetting(key, L"understeerOffset", 0.0f), (HWND)-1);
     setUse360ForDirect(getRegSetting(key, L"use360ForDirect", true));
+    setUndersteerlatAccelDiv(getRegSetting(key, L"understeerlatAccelDiv", 60.0f), (HWND)-1);
+    setUndersteerYawRateMult(getRegSetting(key, L"understeerYawRateMult", 0.0f), (HWND)-1);
     setWindowPosX(getRegSetting(key, L"windowPosX", 30));
     setWindowPosY(getRegSetting(key, L"windowPosY", 30));
     RegCloseKey(key);
@@ -467,7 +502,8 @@ void Settings::writeGenericSettings() {
     setRegSetting(key, L"use360ForDirect", use360ForDirect);
     setRegSetting(key, L"understeerFactor", understeerFactor);
     setRegSetting(key, L"understeerOffset", understeerOffset);
-
+    setRegSetting(key, L"understeerlatAccelDiv", understeerlatAccelDiv);
+    setRegSetting(key, L"understeerYawRateMult", understeerYawRateMult);
     RegCloseKey(key);
 
 }
@@ -487,7 +523,7 @@ void Settings::readSettingsForCar(char *car) {
     char carName[MAX_CAR_NAME];
     int type = 2, min = 0, max = 45, longLoad = 1, use360 = 1;
     float bumps = 0.0f, damping = 0.0f, yaw = 0.0f, yawOffset = 0.0f;
-    float understeer = 0.0f, understeerOffset = 0.0f;
+    float understeer = 0.0f, understeerOffset = 0.0f, understeerYawRateMult = 0.0f, understeerlatAccelDiv = 0.0f;
 
     memset(carName, 0, sizeof(carName));
 
@@ -497,7 +533,7 @@ void Settings::readSettingsForCar(char *car) {
                 line.c_str(), INI_SCAN_FORMAT,
                 carName, sizeof(carName),
                 &type, &min, &max, &bumps, &damping, &longLoad, &use360, &yaw,
-                &yawOffset, &understeer, &understeerOffset
+                &yawOffset, &understeer, &understeerOffset, &understeerYawRateMult, &understeerlatAccelDiv
             ) < 8
         )
             continue;
@@ -520,7 +556,8 @@ void Settings::readSettingsForCar(char *car) {
     setUndersteerFactor(understeer, (HWND)-1);
     setUndersteerOffset(understeerOffset, (HWND)-1);
     setUse360ForDirect(use360 > 0);
-
+    setUndersteerYawRateMult(understeerYawRateMult, (HWND)-1);
+    setUndersteerlatAccelDiv(understeerlatAccelDiv, (HWND)-1);
 DONE:
     iniFile.close();
 
@@ -546,7 +583,7 @@ void Settings::writeSettingsForCar(char *car) {
     char carName[MAX_CAR_NAME], buf[256];
     int type = 2, min = 0, max = 45, longLoad = 1, use360 = 1;
     float bumps = 0.0f, damping = 0.0f, yaw = 0.0f, yawOffset = 0.0f;
-    float understeer = 0.0f, understeerOffset = 0.0f;
+    float understeer = 0.0f, understeerOffset = 0.0f, understeerYawRateMult = 0.0f, understeerlatAccelDiv = 0.0f;
     bool written = false, iniPresent = iniFile.good();
 
     text(L"Writing settings for car %s", car);
@@ -562,7 +599,7 @@ void Settings::writeSettingsForCar(char *car) {
                 line.c_str(), INI_SCAN_FORMAT,
                 carName, sizeof(carName),
                 &type, &min, &max, &bumps, &damping, &longLoad, &use360,
-                &yaw, &yawOffset, &understeer, &understeerOffset
+                &yaw, &yawOffset, &understeer, &understeerOffset, &understeerYawRateMult, &understeerlatAccelDiv
             ) < 8
         ) {
             strcpy_s(buf, line.c_str());
@@ -578,7 +615,8 @@ void Settings::writeSettingsForCar(char *car) {
             buf, INI_PRINT_FORMAT,
             car, ffbType, getMinForceSetting(), maxForce, getBumpsSetting(),
             dampingFactor, 1, use360ForDirect, sopFactor, getSopOffsetSetting(),
-            understeerFactor, getUndersteerOffsetSetting()
+            understeerFactor, getUndersteerOffsetSetting(), getUndersteerYawRateMult(),
+            getUndersteerlatAccelDiv()
         );
         writeWithNewline(tmpFile, buf);
         written = true;
@@ -618,7 +656,8 @@ void Settings::writeSettingsForCar(char *car) {
         buf, INI_PRINT_FORMAT,
         car, ffbType, getMinForceSetting(), maxForce, getBumpsSetting(),
         dampingFactor, 1, use360ForDirect, sopFactor, getSopOffsetSetting(),
-        understeerFactor, getUndersteerOffsetSetting()
+        understeerFactor, getUndersteerOffsetSetting(), getUndersteerYawRateMult(),
+        getUndersteerlatAccelDiv()
     );
     writeWithNewline(tmpFile, buf);
 

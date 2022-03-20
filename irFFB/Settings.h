@@ -35,6 +35,12 @@ class Settings {
         sWins_t *getUndersteerWnd() { return understeerWnd; };
         void setUndersteerOffsetWnd(sWins_t *);
         sWins_t *getUndersteerOffsetWnd() { return understeerOffsetWnd; };
+
+        void setUndersteerYawRateMultWnd(sWins_t*);
+        sWins_t* getUndersteerYawRateMultWnd() { return understeerYawRateMultWnd; };
+        void setUndersteerlatAccelDivWnd(sWins_t*);
+        sWins_t* getUndersteerlatAccelDivWnd() { return understeerlatAccelDivWnd; };
+
         void setUse360Wnd(HWND);
         HWND getUse360Wnd() { return use360Wnd; };
         void setCarSpecificWnd(HWND);
@@ -72,6 +78,10 @@ class Settings {
         float getUndersteerFactor() { return understeerFactor; };
         bool setUndersteerOffset(float, HWND);
         float getUndersteerOffset() { return understeerOffset; };
+        bool setUndersteerYawRateMult(float, HWND);
+        float getUndersteerYawRateMult() { return understeerYawRateMult; };
+        bool setUndersteerlatAccelDiv(float, HWND);
+        float getUndersteerlatAccelDiv() { return understeerlatAccelDiv; };
         void setUse360ForDirect(bool);
         bool getUse360ForDirect() { return use360ForDirect; };
         void setUseCarSpecific(bool, char *);
@@ -104,11 +114,11 @@ class Settings {
 
     private:
         HWND devWnd, ffbWnd;
-        sWins_t *minWnd, *maxWnd, *bumpsWnd, *dampingWnd, *sopWnd, *sopOffsetWnd, *understeerWnd, *understeerOffsetWnd;
+        sWins_t *minWnd, *maxWnd, *bumpsWnd, *dampingWnd, *sopWnd, *sopOffsetWnd, *understeerWnd, *understeerOffsetWnd, *understeerYawRateMultWnd, *understeerlatAccelDivWnd;
         HWND use360Wnd, carSpecificWnd, reduceWhenParkedWnd;
         HWND runOnStartupWnd, startMinimisedWnd, debugWnd;
         int ffbType, ffdeviceIdx, minForce, maxForce;
-        float scaleFactor, bumpsFactor, dampingFactor, sopFactor, sopOffset, understeerFactor, understeerOffset;
+        float scaleFactor, bumpsFactor, dampingFactor, sopFactor, sopOffset, understeerFactor, understeerOffset, understeerYawRateMult, understeerlatAccelDiv;
         bool use360ForDirect, useCarSpecific, debug;
         bool reduceWhenParked, runOnStartup, startMinimised;
         GUID devGuid = GUID_NULL, ffdevices[MAX_FFB_DEVICES];

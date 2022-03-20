@@ -42,8 +42,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define SETTINGS_KEY L"Software\\irFFB\\Settings"
 #define RUN_ON_STARTUP_KEY L"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 #define INI_PATH L"irFFB.ini"
-#define INI_SCAN_FORMAT  "%[^:]:%d:%d:%d:%f:%f:%d:%d:%f:%f:%f:%f"
-#define INI_PRINT_FORMAT "%s:%d:%d:%d:%0.1f:%0.1f:%d:%d:%0.1f:%0.1f:%0.1f:%0.1f\r"
+#define INI_SCAN_FORMAT  "%[^:]:%d:%d:%d:%f:%f:%d:%d:%f:%f:%f:%f:%f:%f"
+#define INI_PRINT_FORMAT "%s:%d:%d:%d:%0.1f:%0.1f:%d:%d:%0.1f:%0.1f:%0.1f:%0.1f:%0.1f:%0.1f\r"
 #define MAX_CAR_NAME 32
 #define MAX_LATENCY_TIMES 32
 #define LATENCY_MIN_DX 60
@@ -82,6 +82,8 @@ typedef struct sWins {
     HWND trackbar;
     HWND label;
     HWND value;
+    float min;
+    float max;
 } sWins_t;
 
 struct LogiRpmData {

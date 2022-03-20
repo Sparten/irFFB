@@ -122,7 +122,8 @@ understeerCoefs usteerCoefs[] = {
     { "usf2000usf17",       34.5f, 96.0f  },
     { "v8supercars fordmustanggt",  52.0f, 78.0f  },
     { "v8supercars holden2019",     52.0f, 78.0f  },
-    { "williamsfw31",       38.0f, 110.0f }
+    { "williamsfw31",       38.0f, 110.0f },
+    { "dummy",              0.0f, 0.0f }
 };
 
 int force = 0;
@@ -522,9 +523,19 @@ float getCarRedline() {
 
 understeerCoefs *getCarUsteerCoeffs(char *car) {
 
+    if (settings.getUndersteerlatAccelDiv() > 0 && settings.getUndersteerYawRateMult() > 0)
+    {
+        understeerCoefs* ucar = &usteerCoefs[sizeof(usteerCoefs) / sizeof(usteerCoefs[0])];        
+        ucar->yawRateMult = settings.getUndersteerYawRateMult();
+        ucar->latAccelDiv = settings.getUndersteerlatAccelDiv();
+        return ucar;
+    }
     for (int i = 0; i < sizeof(usteerCoefs) / sizeof(usteerCoefs[0]); i++)
-        if (!strcmp(car, usteerCoefs[i].car)) {
+        if (!strcmp(car, usteerCoefs[i].car)) 
+        {
             debug(L"We have understeer coeffs for car %s", car);
+            settings.setUndersteerYawRateMult(usteerCoefs[i].yawRateMult,(HWND)-1);
+            settings.setUndersteerlatAccelDiv(usteerCoefs[i].latAccelDiv, (HWND)-1);           
             return &usteerCoefs[i];
         }
 
@@ -772,10 +783,10 @@ int APIENTRY wWinMain(
              debug(L"Redline is %d rpm", (int)redline);
             
             usCoefs = getCarUsteerCoeffs(car);
-            EnableWindow(settings.getUndersteerWnd()->trackbar, usCoefs != nullptr);
-            EnableWindow(settings.getUndersteerWnd()->value, usCoefs != nullptr);
-            EnableWindow(settings.getUndersteerOffsetWnd()->trackbar, usCoefs != nullptr);
-            EnableWindow(settings.getUndersteerOffsetWnd()->value, usCoefs != nullptr);
+            //EnableWindow(settings.getUndersteerWnd()->trackbar, usCoefs != nullptr);
+            //EnableWindow(settings.getUndersteerWnd()->value, usCoefs != nullptr);
+            //EnableWindow(settings.getUndersteerOffsetWnd()->trackbar, usCoefs != nullptr);
+            //EnableWindow(settings.getUndersteerOffsetWnd()->value, usCoefs != nullptr);
 
             // Inform iRacing of the maxForce setting
             irsdk_broadcastMsg(irsdk_BroadcastFFBCommand, irsdk_FFBCommand_MaxForce, (float)settings.getMaxForce());
@@ -891,9 +902,9 @@ int APIENTRY wWinMain(
                         }
                     }                   
 
-                    if (usCoefs != nullptr && settings.getUndersteerFactor() > 0.0f) {
+                    if (settings.getUndersteerFactor() > 0.0f && settings.getUndersteerYawRateMult() > 0 && settings.getUndersteerlatAccelDiv() > 0) {
 
-                        reqSteer = abs((*yawRate * usCoefs->yawRateMult) / *speed + *latAccel / usCoefs->latAccelDiv);
+                        reqSteer = abs((*yawRate * settings.getUndersteerYawRateMult()) / *speed + *latAccel / settings.getUndersteerlatAccelDiv());
                         uSteer = minf(abs(*steer) - reqSteer - USTEER_MIN_OFFSET - settings.getUndersteerOffset(), 1.0f);
 
                         if (uSteer > 0.0f)
@@ -1310,6 +1321,11 @@ sWins_t *slider(HWND parent, wchar_t *name, int x, int y, wchar_t *start, wchar_
         parent, NULL, hInst, NULL
     );
 
+    wins->min = std::stof(start);
+    wins->max = std::stof(end);
+
+    SendMessage(wins->trackbar, TBM_SETRANGE, (WPARAM)TRUE, MAKELONG(std::stof(start), std::stof(end)));
+
     HWND buddyLeft = CreateWindowEx(
         0, L"STATIC", start,
         SS_LEFT | WS_CHILD | WS_VISIBLE,
@@ -1323,7 +1339,7 @@ sWins_t *slider(HWND parent, wchar_t *name, int x, int y, wchar_t *start, wchar_
         0, 0, 52, 20, parent, NULL, hInst, NULL
     );
     SendMessage(wins->trackbar, TBM_SETBUDDY, (WPARAM)FALSE, (LPARAM)buddyRight);
-
+    
     return wins;
 
 }
@@ -1339,6 +1355,16 @@ HWND checkbox(HWND parent, wchar_t *name, int x, int y) {
 
 }
 
+HWND groupox(HWND parent, wchar_t* name, int x, int y, int width, int height) {
+
+    return
+        CreateWindowEx(
+            0, L"BUTTON", name,
+            BS_GROUPBOX | BS_MULTILINE | WS_CHILD | WS_TABSTOP | WS_VISIBLE,
+            x, y, width, height, parent, nullptr, hInst, nullptr
+        );
+
+}
 
 HWND progressbar(HWND parent, wchar_t* name, int x, int y, int width, int max)
 {   
@@ -1375,7 +1401,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     mainWnd = CreateWindowW(
         szWindowClass, szTitle,
         WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME,
-        CW_USEDEFAULT, CW_USEDEFAULT, 864, 770,
+        CW_USEDEFAULT, CW_USEDEFAULT, 864, 840,
         NULL, NULL, hInst, NULL
     );
 
@@ -1390,42 +1416,48 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     niData.uFlags = NIF_ICON | NIF_MESSAGE;
     niData.uCallbackMessage = WM_TRAY_ICON;
     niData.hIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_SMALL));
+    
 
     settings.setDevWnd(combo(mainWnd, L"FFB device:", 44, 20));
     settings.setFfbWnd(combo(mainWnd, L"FFB type:", 44, 80));
     settings.setMinWnd(slider(mainWnd, L"Min force:", 44, 154, L"0", L"20", false));
     settings.setMaxWnd(slider(mainWnd, L"Max force:", 44, 226, L"5 Nm", L"65 Nm", false));
     settings.setDampingWnd(slider(mainWnd, L"Damping:", 44, 298, L"0", L"100", true));
-    settings.setBumpsWnd(slider(mainWnd, L"Suspension bumps:", 464, 40, L"0", L"100", true));
-    settings.setUndersteerWnd(slider(mainWnd, L"Understeer:", 464, 100, L"0", L"100", true));
-    settings.setUndersteerOffsetWnd(slider(mainWnd, L"Understeer offset:", 464, 160, L"0", L"100", true));
-    settings.setSopWnd(slider(mainWnd, L"SoP effect:", 464, 220, L"0", L"100", true));
-    settings.setSopOffsetWnd(slider(mainWnd, L"SoP offset:", 464, 280, L"0", L"100", true));
+
+    auto groupoxWnd = groupox(mainWnd, L"Understeer Effect:", 444, 20, 380, 260);
+    settings.setUndersteerWnd(slider(mainWnd, L"Understeer:", 464, 40, L"0", L"100", true));
+    settings.setUndersteerOffsetWnd(slider(mainWnd, L"Understeer offset:", 464, 100, L"0", L"100", true));    
+    settings.setUndersteerYawRateMultWnd(slider(mainWnd, L"Force multiplier:", 464, 160, L"0", L"60", true));
+    settings.setUndersteerlatAccelDivWnd(slider(mainWnd, L"Release force:", 464, 220, L"60", L"130", true));
+
+    settings.setBumpsWnd(slider(mainWnd, L"Suspension bumps:", 464, 290, L"0", L"100", true));   
+    settings.setSopWnd(slider(mainWnd, L"SoP effect:", 464, 350, L"0", L"100", true));
+    settings.setSopOffsetWnd(slider(mainWnd, L"SoP offset:", 464, 410, L"0", L"100", true));
     settings.setUse360Wnd(
         checkbox(
             mainWnd, 
             L" Use 360 Hz telemetry for suspension effects\r\n in direct modes?",
-            460, 340
+            460, 470
         )
     );
     settings.setCarSpecificWnd(
-        checkbox(mainWnd, L" Use car specific settings?", 460, 400)
+        checkbox(mainWnd, L" Use car specific settings?", 460, 520)
     );
     settings.setReduceWhenParkedWnd(
-        checkbox(mainWnd, L" Reduce force when parked?", 460, 440)
+        checkbox(mainWnd, L" Reduce force when parked?", 460, 560)
     );
     settings.setRunOnStartupWnd(
-        checkbox(mainWnd, L" Run on startup?", 460, 480)
+        checkbox(mainWnd, L" Run on startup?", 460, 600)
     );
     settings.setStartMinimisedWnd(
-        checkbox(mainWnd, L" Start minimised?", 460, 520)
+        checkbox(mainWnd, L" Start minimised?", 460, 640)
     );
     settings.setDebugWnd(
-        checkbox(mainWnd, L"Debug logging?", 460, 560)
+        checkbox(mainWnd, L"Debug logging?", 460, 680)
     );
 
     wndFFBAmount = progressbar(mainWnd, L"Current applied force", 32, 620, 376, IR_MAX);
-    wndFFBClipping = progressbar(mainWnd, L"Clipping force", 460, 620, 336, progressClippingMax);
+    wndFFBClipping = progressbar(mainWnd, L"Clipping force", 32, 680, 376, progressClippingMax);
 
     int statusParts[] = { 256, 424, 864 };
 
@@ -1541,6 +1573,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 settings.setSopFactor(reinterpret_cast<float &>(wParam), wnd);
             else if (wnd == settings.getSopOffsetWnd()->value)
                 settings.setSopOffset(reinterpret_cast<float &>(wParam), wnd);
+            else if (wnd == settings.getUndersteerYawRateMultWnd()->value)
+                settings.setUndersteerYawRateMult(reinterpret_cast<float&>(wParam), wnd);
+            else if (wnd == settings.getUndersteerlatAccelDivWnd()->value)
+                settings.setUndersteerlatAccelDiv(reinterpret_cast<float&>(wParam), wnd);
         }
         break;
              
@@ -1562,6 +1598,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 settings.setUndersteerFactor((float)SendMessage(wnd, TBM_GETPOS, 0, 0), wnd);
             else if (wnd == settings.getUndersteerOffsetWnd()->trackbar)
                 settings.setUndersteerOffset((float)SendMessage(wnd, TBM_GETPOS, 0, 0), wnd);
+            else if (wnd == settings.getUndersteerYawRateMultWnd()->trackbar)
+                settings.setUndersteerYawRateMult((float)SendMessage(wnd, TBM_GETPOS, 0, 0), wnd);
+            else if (wnd == settings.getUndersteerlatAccelDivWnd()->trackbar)
+                settings.setUndersteerlatAccelDiv((float)SendMessage(wnd, TBM_GETPOS, 0, 0), wnd);
         }
         break;
 

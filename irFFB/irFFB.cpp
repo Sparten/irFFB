@@ -148,6 +148,11 @@ LARGE_INTEGER freq;
 int vjDev = 1;
 FFB_DATA ffbPacket;
 
+extern "C" NTSYSAPI NTSTATUS NTAPI NtSetTimerResolution(ULONG DesiredResolution, BOOLEAN SetResolution, PULONG CurrentResolution);
+
+extern "C" NTSYSAPI NTSTATUS NTAPI NtQueryTimerResolution(PULONG MininumResolution, PULONG MaximumResolution, PULONG CurrentResolution);
+
+
 float *floatvarptr(const char *data, const char *name) {
     int idx = irsdk_varNameToIndex(name);
     if (idx >= 0)
@@ -172,6 +177,35 @@ bool *boolvarptr(const char *data, const char *name) {
         return nullptr;
 }
 
+bool IsSavedDisplayActive()
+{
+    // Check if we have a monitor
+    bool has = false;
+
+    // Iterate over all displays and check if we have a valid one.
+    //  If the device ID contains the string default_monitor no monitor is attached.
+    DISPLAY_DEVICE dd;
+    dd.cb = sizeof(dd);
+    int deviceIndex = 0;
+    while (EnumDisplayDevices(0, deviceIndex, &dd, 0))
+    {
+        std::wstring deviceName = dd.DeviceName;
+        int monitorIndex = 0;
+        while (EnumDisplayDevices(deviceName.c_str(), monitorIndex, &dd, 0))
+        {
+            size_t len = _tcslen(dd.DeviceID);
+            for (size_t i = 0; i < len; ++i)
+                dd.DeviceID[i] = _totlower(dd.DeviceID[i]);
+
+            has = has || ((len > 10 && _tcsstr(dd.DeviceID, L"default_monitor") == nullptr) && dd.StateFlags & DISPLAY_DEVICE_ACTIVE);
+
+            ++monitorIndex;
+        }
+        ++deviceIndex;
+    }
+
+    return has;
+}
 // Thread that reads the wheel, writes to vJoy and updates the DI effect
 DWORD WINAPI readWheelThread(LPVOID lParam) {
 
@@ -395,7 +429,7 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
                             yawForce[idx] + (yawForce[idx + 1] - yawForce[idx]) / 2.0f
                     );
 
-                sleepSpinUntil(&start, 0, 1380 * i);
+                sleepSpinUntil(&start, 1000, 1380 * i);
                 setFFB(r);
 
             }
@@ -418,7 +452,7 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
 
             r += scaleTorque(yawForce[DIRECT_INTERP_SAMPLES - 1]);
 
-            sleepSpinUntil(&start, 0, 1380 * (DIRECT_INTERP_SAMPLES * 2 - 1));
+            sleepSpinUntil(&start, 1000, 1380 * (DIRECT_INTERP_SAMPLES * 2 - 1));
             setFFB(r);
 
             lastSuspForce = suspForceST[DIRECT_INTERP_SAMPLES - 1];
@@ -521,14 +555,11 @@ float getCarRedline() {
 
 }
 
-understeerCoefs *getCarUsteerCoeffs(char *car) {
+bool getBuildInCarUsteerCoeffs(char *car) {
 
     if (settings.getUndersteerlatAccelDiv() > 0 && settings.getUndersteerYawRateMult() > 0)
     {
-        understeerCoefs* ucar = &usteerCoefs[sizeof(usteerCoefs) / sizeof(usteerCoefs[0])];        
-        ucar->yawRateMult = settings.getUndersteerYawRateMult();
-        ucar->latAccelDiv = settings.getUndersteerlatAccelDiv();
-        return ucar;
+        return true;
     }
     for (int i = 0; i < sizeof(usteerCoefs) / sizeof(usteerCoefs[0]); i++)
         if (!strcmp(car, usteerCoefs[i].car)) 
@@ -536,11 +567,11 @@ understeerCoefs *getCarUsteerCoeffs(char *car) {
             debug(L"We have understeer coeffs for car %s", car);
             settings.setUndersteerYawRateMult(usteerCoefs[i].yawRateMult,(HWND)-1);
             settings.setUndersteerlatAccelDiv(usteerCoefs[i].latAccelDiv, (HWND)-1);           
-            return &usteerCoefs[i];
+            return true;
         }
 
     debug(L"No understeer coeffs for car %s", car);
-    return nullptr;
+    return false;
 
 }
 
@@ -610,6 +641,7 @@ void restore() {
     Shell_NotifyIcon(NIM_DELETE, &niData);
     ShowWindow(mainWnd, SW_SHOW);
     BringWindowToTop(mainWnd);
+    SetForegroundWindow(mainWnd);
 }
 
 int APIENTRY wWinMain(
@@ -649,8 +681,6 @@ int APIENTRY wWinMain(
     int STnumSamples = 0, STmaxIdx = 0, lastTrackSurface = -1;
     float halfSteerMax = 0, lastTorque = 0, lastSuspForce = 0, redline;
     float yaw = 0.0f, yawFilter[DIRECT_INTERP_SAMPLES];
-
-    understeerCoefs *usCoefs;
 
     ccEx.dwICC = ICC_WIN95_CLASSES | ICC_BAR_CLASSES | ICC_STANDARD_CLASSES;
     ccEx.dwSize = sizeof(ccEx);
@@ -698,6 +728,19 @@ int APIENTRY wWinMain(
     if (!InitInstance(hInstance, nCmdShow))
         return FALSE;
 
+    
+
+    // Hack! try set better sleep resulution with  undocumented NtSetTimerResolution, no error checking or nothing for now
+    ULONG currentRes;
+    ULONG CurrentResolution = 0;
+    ULONG MininumResolution = 0;
+    ULONG MaximumResolution = 0;
+    
+    NtQueryTimerResolution( &MaximumResolution,  &MininumResolution,  &CurrentResolution);
+
+    NtSetTimerResolution(2500, TRUE, &currentRes);
+
+    
     memset(car, 0, sizeof(car));
     setCarStatus(car);
     setConnectedStatus(false);
@@ -782,7 +825,7 @@ int APIENTRY wWinMain(
             redline = getCarRedline();
              debug(L"Redline is %d rpm", (int)redline);
             
-            usCoefs = getCarUsteerCoeffs(car);
+            getBuildInCarUsteerCoeffs(car);
             //EnableWindow(settings.getUndersteerWnd()->trackbar, usCoefs != nullptr);
             //EnableWindow(settings.getUndersteerWnd()->value, usCoefs != nullptr);
             //EnableWindow(settings.getUndersteerOffsetWnd()->trackbar, usCoefs != nullptr);
@@ -850,6 +893,7 @@ int APIENTRY wWinMain(
                         CFshockDeflLast = -10000.0f;
                 clippedSamples = samples = lastGear = 0;
                 memset(yawFilter, 0, DIRECT_INTERP_SAMPLES * sizeof(float));
+                irsdk_broadcastMsg(irsdk_BroadcastFFBCommand, irsdk_FFBCommand_MaxForce, (float)settings.getMaxForce());
             }
 
             if (*trackSurface != lastTrackSurface) {
@@ -1133,12 +1177,12 @@ int APIENTRY wWinMain(
                                     swTorqueST[idx] + suspForceST[idx] + yawForce[idx]
                                 );
 
-                        sleepSpinUntil(&start, 0, 1380 * (i + 1));
+                        sleepSpinUntil(&start, 1000, 1380 * (i + 1));
                         setFFB(force);
 
                     }
 
-                    sleepSpinUntil(&start, 0, 1380 * (iMax + 1));
+                    sleepSpinUntil(&start, 1000, 1380 * (iMax + 1));
                     setFFB(
                         scaleTorque(
                             swTorqueST[STmaxIdx] + suspForceST[STmaxIdx] + yawForce[STmaxIdx]
@@ -2163,11 +2207,16 @@ inline void sleepSpinUntil(PLARGE_INTEGER base, UINT sleep, UINT offset) {
     LONGLONG until = base->QuadPart + (offset * freq.QuadPart) / 1000000;
 
     std::this_thread::sleep_for(std::chrono::microseconds(sleep));
-    do {
+    QueryPerformanceCounter(&time);
+    int i = 0;
+
+    while (time.QuadPart < until) {
         _asm { pause };
         QueryPerformanceCounter(&time);
-    } while (time.QuadPart < until);
+       // i++;
+    }
 
+    //text(L"Paused for %d", i);
 }
 
 inline int scaleTorque(float t) {

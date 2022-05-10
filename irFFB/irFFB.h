@@ -129,6 +129,7 @@ void initDirectInput();
 void releaseDirectInput();
 void reacquireDIDevice();
 inline void sleepSpinUntil(PLARGE_INTEGER, UINT, UINT);
+inline BOOLEAN nanosleep(LONGLONG ns);
 inline int scaleTorque(float);
 inline void setFFB(int);
 void initAll();

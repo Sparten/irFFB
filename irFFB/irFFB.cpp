@@ -429,7 +429,7 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
                             yawForce[idx] + (yawForce[idx + 1] - yawForce[idx]) / 2.0f
                     );
 
-                sleepSpinUntil(&start, 1000, 1380 * i);
+                sleepSpinUntil(&start, 0, 1380 * i);
                 setFFB(r);
 
             }
@@ -452,7 +452,7 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
 
             r += scaleTorque(yawForce[DIRECT_INTERP_SAMPLES - 1]);
 
-            sleepSpinUntil(&start, 1000, 1380 * (DIRECT_INTERP_SAMPLES * 2 - 1));
+            sleepSpinUntil(&start, 0, 1380 * (DIRECT_INTERP_SAMPLES * 2 - 1));
             setFFB(r);
 
             lastSuspForce = suspForceST[DIRECT_INTERP_SAMPLES - 1];
@@ -1177,12 +1177,12 @@ int APIENTRY wWinMain(
                                     swTorqueST[idx] + suspForceST[idx] + yawForce[idx]
                                 );
 
-                        sleepSpinUntil(&start, 1000, 1380 * (i + 1));
+                        sleepSpinUntil(&start, 0, 1380 * (i + 1));
                         setFFB(force);
 
                     }
 
-                    sleepSpinUntil(&start, 1000, 1380 * (iMax + 1));
+                    sleepSpinUntil(&start, 0, 1380 * (iMax + 1));
                     setFFB(
                         scaleTorque(
                             swTorqueST[STmaxIdx] + suspForceST[STmaxIdx] + yawForce[STmaxIdx]
@@ -2202,11 +2202,13 @@ void reacquireDIDevice() {
 }
 
 inline void sleepSpinUntil(PLARGE_INTEGER base, UINT sleep, UINT offset) {
+    
+    nanosleep(offset);
+    //LARGE_INTEGER time;
+    //LONGLONG until = base->QuadPart + (offset * freq.QuadPart) / 1000000;
 
-    LARGE_INTEGER time;
-    LONGLONG until = base->QuadPart + (offset * freq.QuadPart) / 1000000;
-
-    std::this_thread::sleep_for(std::chrono::microseconds(sleep));
+    
+    /*std::this_thread::sleep_for(std::chrono::microseconds(sleep));
     QueryPerformanceCounter(&time);
     int i = 0;
 
@@ -2214,10 +2216,33 @@ inline void sleepSpinUntil(PLARGE_INTEGER base, UINT sleep, UINT offset) {
         _asm { pause };
         QueryPerformanceCounter(&time);
        // i++;
-    }
+    }*/
 
     //text(L"Paused for %d", i);
 }
+
+inline BOOLEAN nanosleep(LONGLONG ns)
+{
+    /* Declarations */
+    HANDLE timer;     /* Timer handle */
+    LARGE_INTEGER li; /* Time defintion */
+    /* Create timer */
+    if (!(timer = CreateWaitableTimer(NULL, TRUE, NULL)))
+        return FALSE;
+    /* Set timer properties */
+    li.QuadPart = -ns;
+    if (!SetWaitableTimer(timer, &li, 0, NULL, NULL, FALSE)) {
+        CloseHandle(timer);
+        return FALSE;
+    }
+    /* Start & wait for timer */
+    WaitForSingleObject(timer, INFINITE);
+    /* Clean resources */
+    CloseHandle(timer);
+    /* Slept without problems */
+    return TRUE;
+}
+
 
 inline int scaleTorque(float t) {
 

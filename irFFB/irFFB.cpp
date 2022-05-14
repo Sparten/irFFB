@@ -153,6 +153,49 @@ extern "C" NTSYSAPI NTSTATUS NTAPI NtSetTimerResolution(ULONG DesiredResolution,
 extern "C" NTSYSAPI NTSTATUS NTAPI NtQueryTimerResolution(PULONG MininumResolution, PULONG MaximumResolution, PULONG CurrentResolution);
 
 
+static ULARGE_INTEGER lastCPU, lastSysCPU, lastUserCPU;
+static int numProcessors;
+static HANDLE self;
+
+void init() {
+    SYSTEM_INFO sysInfo;
+    FILETIME ftime, fsys, fuser;
+
+    GetSystemInfo(&sysInfo);
+    numProcessors = sysInfo.dwNumberOfProcessors;
+
+    GetSystemTimeAsFileTime(&ftime);
+    memcpy(&lastCPU, &ftime, sizeof(FILETIME));
+
+    self = GetCurrentProcess();
+    GetProcessTimes(self, &ftime, &ftime, &fsys, &fuser);
+    memcpy(&lastSysCPU, &fsys, sizeof(FILETIME));
+    memcpy(&lastUserCPU, &fuser, sizeof(FILETIME));
+}
+
+double getCurrentValue() {
+    FILETIME ftime, fsys, fuser;
+    ULARGE_INTEGER now, sys, user;
+    double percent;
+
+    GetSystemTimeAsFileTime(&ftime);
+    memcpy(&now, &ftime, sizeof(FILETIME));
+
+    GetProcessTimes(self, &ftime, &ftime, &fsys, &fuser);
+    memcpy(&sys, &fsys, sizeof(FILETIME));
+    memcpy(&user, &fuser, sizeof(FILETIME));
+    percent = (sys.QuadPart - lastSysCPU.QuadPart) +
+        (user.QuadPart - lastUserCPU.QuadPart);
+    percent /= (now.QuadPart - lastCPU.QuadPart);
+    percent /= numProcessors;
+    lastCPU = now;
+    lastUserCPU = user;
+    lastSysCPU = sys;
+
+    return percent;
+}
+
+
 float *floatvarptr(const char *data, const char *name) {
     int idx = irsdk_varNameToIndex(name);
     if (idx >= 0)
@@ -342,7 +385,6 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
     int r;
     __declspec(align(16)) float prod[12];
     float lastSuspForce = 0, lastYawForce = 0;
-    LARGE_INTEGER start;
 
     while (true) {
 
@@ -361,8 +403,6 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
             continue;
         
         mag = (ffbPacket.data[3] << 8) + ffbPacket.data[2];
-
-        QueryPerformanceCounter(&start);
 
         // sign extend
         force = mag;
@@ -429,7 +469,7 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
                             yawForce[idx] + (yawForce[idx + 1] - yawForce[idx]) / 2.0f
                     );
 
-                sleepSpinUntil(&start, 0, 1380 * i);
+                nanosleep(1380 * i);
                 setFFB(r);
 
             }
@@ -452,7 +492,7 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
 
             r += scaleTorque(yawForce[DIRECT_INTERP_SAMPLES - 1]);
 
-            sleepSpinUntil(&start, 0, 1380 * (DIRECT_INTERP_SAMPLES * 2 - 1));
+            nanosleep(1380 * (DIRECT_INTERP_SAMPLES * 2 - 1));
             setFFB(r);
 
             lastSuspForce = suspForceST[DIRECT_INTERP_SAMPLES - 1];
@@ -480,7 +520,8 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
             if (use360)
                 r += scaleTorque(suspForceST[i]);
 
-            sleepSpinUntil(&start, 2000, 2760 * i);
+            //sleepSpinUntil(&start, 2000, 2760 * i);
+            nanosleep(2760 * i);
             setFFB(r);
 
         }
@@ -728,8 +769,7 @@ int APIENTRY wWinMain(
     if (!InitInstance(hInstance, nCmdShow))
         return FALSE;
 
-    
-
+    init();
     // Hack! try set better sleep resulution with  undocumented NtSetTimerResolution, no error checking or nothing for now
     ULONG currentRes;
     ULONG CurrentResolution = 0;
@@ -1135,7 +1175,7 @@ int APIENTRY wWinMain(
 
                     for (int i = 0; i < STmaxIdx; i++) {
                         setFFB(scaleTorque(swTorqueST[i] + suspForceST[i] + yawForce[i]));
-                        sleepSpinUntil(&start, 2000, 2760 * (i + 1));
+                        nanosleep(2760 * (i + 1));
                     }
                     setFFB(
                         scaleTorque(
@@ -1177,12 +1217,12 @@ int APIENTRY wWinMain(
                                     swTorqueST[idx] + suspForceST[idx] + yawForce[idx]
                                 );
 
-                        sleepSpinUntil(&start, 0, 1380 * (i + 1));
+                        nanosleep(1380 * (i + 1));
                         setFFB(force);
 
                     }
 
-                    sleepSpinUntil(&start, 0, 1380 * (iMax + 1));
+                    nanosleep(1380 * (iMax + 1));
                     setFFB(
                         scaleTorque(
                             swTorqueST[STmaxIdx] + suspForceST[STmaxIdx] + yawForce[STmaxIdx]
@@ -1198,6 +1238,9 @@ int APIENTRY wWinMain(
 
 
         }
+        /*double process = getCurrentValue();
+        if(process > 4.0)
+            text(L"Cpu usage: %f", process);*/
 
         // Did we lose iRacing?
         if (numHandles > 0 && !(hdr->status & irsdk_stConnected)) {
@@ -2201,37 +2244,24 @@ void reacquireDIDevice() {
 
 }
 
-inline void sleepSpinUntil(PLARGE_INTEGER base, UINT sleep, UINT offset) {
-    
-    nanosleep(offset);
-    //LARGE_INTEGER time;
-    //LONGLONG until = base->QuadPart + (offset * freq.QuadPart) / 1000000;
-
-    
-    /*std::this_thread::sleep_for(std::chrono::microseconds(sleep));
-    QueryPerformanceCounter(&time);
-    int i = 0;
-
-    while (time.QuadPart < until) {
-        _asm { pause };
-        QueryPerformanceCounter(&time);
-       // i++;
-    }*/
-
-    //text(L"Paused for %d", i);
-}
-
 inline void nanosleep(LONGLONG ns)
 {
     /* Declarations */
     HANDLE timer;     /* Timer handle */
     LARGE_INTEGER li; /* Time defintion */
     /* Create timer */
-    if (!(timer = CreateWaitableTimer(NULL, TRUE, NULL)))
+    timeBeginPeriod(1);
+
+    if (!(timer = CreateWaitableTimerEx(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS)))
+    {
+        timeEndPeriod(1);
         return;
-    /* Set timer properties */
+    }
+
     li.QuadPart = -ns;
-    if (!SetWaitableTimer(timer, &li, 0, NULL, NULL, FALSE)) {
+    if (!SetWaitableTimer(timer, &li, 0, NULL, NULL, FALSE)) 
+    {
+        timeEndPeriod(1);
         CloseHandle(timer);
         return;
     }
@@ -2239,6 +2269,7 @@ inline void nanosleep(LONGLONG ns)
     WaitForSingleObject(timer, INFINITE);
     /* Clean resources */
     CloseHandle(timer);
+    timeEndPeriod(1);
     /* Slept without problems */
     return;
 }

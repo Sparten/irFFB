@@ -53,6 +53,9 @@ class Settings {
         HWND getStartMinimisedWnd() { return startMinimisedWnd; };
         void setDebugWnd(HWND);
         HWND getDebugWnd() { return debugWnd; };
+        void setAltTimerWnd(HWND);
+        HWND getAltTimerWnd() { return altTimerWnd; };
+
 
         void clearFfbDevices();
         void addFfbDevice(GUID dev, const wchar_t *);
@@ -99,6 +102,11 @@ class Settings {
 
         void setDebug(bool);
         bool getDebug() { return debug; };
+
+        void setUseAltTimer(bool);
+        bool getUseAltTimer() { return useAltTimer; };
+
+
         float getBumpsSetting();
         int getMinForceSetting();
         float getSopOffsetSetting();
@@ -116,10 +124,10 @@ class Settings {
         HWND devWnd, ffbWnd;
         sWins_t *minWnd, *maxWnd, *bumpsWnd, *dampingWnd, *sopWnd, *sopOffsetWnd, *understeerWnd, *understeerOffsetWnd, *understeerYawRateMultWnd, *understeerlatAccelDivWnd;
         HWND use360Wnd, carSpecificWnd, reduceWhenParkedWnd;
-        HWND runOnStartupWnd, startMinimisedWnd, debugWnd;
+        HWND runOnStartupWnd, startMinimisedWnd, debugWnd, altTimerWnd;
         int ffbType, ffdeviceIdx, minForce, maxForce;
         float scaleFactor, bumpsFactor, dampingFactor, sopFactor, sopOffset, understeerFactor, understeerOffset, understeerYawRateMult, understeerlatAccelDiv;
-        bool use360ForDirect, useCarSpecific, debug;
+        bool use360ForDirect, useCarSpecific, debug, useAltTimer;
         bool reduceWhenParked, runOnStartup, startMinimised;
         GUID devGuid = GUID_NULL, ffdevices[MAX_FFB_DEVICES];
         wchar_t strbuf[64];

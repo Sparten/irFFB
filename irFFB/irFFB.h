@@ -70,6 +70,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define LOGI_WHEEL_HID_CMD "\x00\xf8\x81\x84\x03\x00\x00\x00\x00"
 #define LOGI_WHEEL_HID_CMD_LEN 9
 
+extern "C" NTSYSAPI NTSTATUS NTAPI NtSetTimerResolution(ULONG DesiredResolution, BOOLEAN SetResolution, PULONG CurrentResolution);
+
+extern "C" NTSYSAPI NTSTATUS NTAPI NtQueryTimerResolution(PULONG MininumResolution, PULONG MaximumResolution, PULONG CurrentResolution);
+
 enum ffbType {
     FFBTYPE_360HZ,
     FFBTYPE_360HZ_INTERP,

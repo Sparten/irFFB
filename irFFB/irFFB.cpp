@@ -148,53 +148,6 @@ LARGE_INTEGER freq;
 int vjDev = 1;
 FFB_DATA ffbPacket;
 
-extern "C" NTSYSAPI NTSTATUS NTAPI NtSetTimerResolution(ULONG DesiredResolution, BOOLEAN SetResolution, PULONG CurrentResolution);
-
-extern "C" NTSYSAPI NTSTATUS NTAPI NtQueryTimerResolution(PULONG MininumResolution, PULONG MaximumResolution, PULONG CurrentResolution);
-
-
-static ULARGE_INTEGER lastCPU, lastSysCPU, lastUserCPU;
-static int numProcessors;
-static HANDLE self;
-
-void init() {
-    SYSTEM_INFO sysInfo;
-    FILETIME ftime, fsys, fuser;
-
-    GetSystemInfo(&sysInfo);
-    numProcessors = sysInfo.dwNumberOfProcessors;
-
-    GetSystemTimeAsFileTime(&ftime);
-    memcpy(&lastCPU, &ftime, sizeof(FILETIME));
-
-    self = GetCurrentProcess();
-    GetProcessTimes(self, &ftime, &ftime, &fsys, &fuser);
-    memcpy(&lastSysCPU, &fsys, sizeof(FILETIME));
-    memcpy(&lastUserCPU, &fuser, sizeof(FILETIME));
-}
-
-double getCurrentValue() {
-    FILETIME ftime, fsys, fuser;
-    ULARGE_INTEGER now, sys, user;
-    double percent;
-
-    GetSystemTimeAsFileTime(&ftime);
-    memcpy(&now, &ftime, sizeof(FILETIME));
-
-    GetProcessTimes(self, &ftime, &ftime, &fsys, &fuser);
-    memcpy(&sys, &fsys, sizeof(FILETIME));
-    memcpy(&user, &fuser, sizeof(FILETIME));
-    percent = (sys.QuadPart - lastSysCPU.QuadPart) +
-        (user.QuadPart - lastUserCPU.QuadPart);
-    percent /= (now.QuadPart - lastCPU.QuadPart);
-    percent /= numProcessors;
-    lastCPU = now;
-    lastUserCPU = user;
-    lastSysCPU = sys;
-
-    return percent;
-}
-
 
 float *floatvarptr(const char *data, const char *name) {
     int idx = irsdk_varNameToIndex(name);
@@ -385,6 +338,8 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
     int r;
     __declspec(align(16)) float prod[12];
     float lastSuspForce = 0, lastYawForce = 0;
+    LARGE_INTEGER start;
+
 
     while (true) {
 
@@ -403,6 +358,8 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
             continue;
         
         mag = (ffbPacket.data[3] << 8) + ffbPacket.data[2];
+
+        QueryPerformanceCounter(&start);
 
         // sign extend
         force = mag;
@@ -469,7 +426,9 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
                             yawForce[idx] + (yawForce[idx + 1] - yawForce[idx]) / 2.0f
                     );
 
-                nanosleep(1380 * i);
+                //nanosleep(1380 * i);
+
+                sleepSpinUntil(&start, 1000, 1380 * i);
                 setFFB(r);
 
             }
@@ -492,7 +451,8 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
 
             r += scaleTorque(yawForce[DIRECT_INTERP_SAMPLES - 1]);
 
-            nanosleep(1380 * (DIRECT_INTERP_SAMPLES * 2 - 1));
+            //nanosleep(1380 * (DIRECT_INTERP_SAMPLES * 2 - 1));
+            sleepSpinUntil(&start, 1000, 1380 * (DIRECT_INTERP_SAMPLES * 2 - 1));
             setFFB(r);
 
             lastSuspForce = suspForceST[DIRECT_INTERP_SAMPLES - 1];
@@ -520,8 +480,8 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
             if (use360)
                 r += scaleTorque(suspForceST[i]);
 
-            //sleepSpinUntil(&start, 2000, 2760 * i);
-            nanosleep(2760 * i);
+            sleepSpinUntil(&start, 2000, 2760 * i);
+            //nanosleep(2760 * i);
             setFFB(r);
 
         }
@@ -769,7 +729,6 @@ int APIENTRY wWinMain(
     if (!InitInstance(hInstance, nCmdShow))
         return FALSE;
 
-    init();
     // Hack! try set better sleep resulution with  undocumented NtSetTimerResolution, no error checking or nothing for now
     ULONG currentRes;
     ULONG CurrentResolution = 0;
@@ -1175,7 +1134,8 @@ int APIENTRY wWinMain(
 
                     for (int i = 0; i < STmaxIdx; i++) {
                         setFFB(scaleTorque(swTorqueST[i] + suspForceST[i] + yawForce[i]));
-                        nanosleep(2760 * (i + 1));
+                        sleepSpinUntil(&start, 2000, 2760 * (i + 1));
+                        //nanosleep(2760 * (i + 1));
                     }
                     setFFB(
                         scaleTorque(
@@ -1217,12 +1177,14 @@ int APIENTRY wWinMain(
                                     swTorqueST[idx] + suspForceST[idx] + yawForce[idx]
                                 );
 
-                        nanosleep(1380 * (i + 1));
+                        //nanosleep(1380 * (i + 1));
+                        sleepSpinUntil(&start, 1000, 1380 * (i + 1));
                         setFFB(force);
 
                     }
 
-                    nanosleep(1380 * (iMax + 1));
+                    //nanosleep(1380 * (iMax + 1));
+                    sleepSpinUntil(&start, 1000, 1380 * (iMax + 1));
                     setFFB(
                         scaleTorque(
                             swTorqueST[STmaxIdx] + suspForceST[STmaxIdx] + yawForce[STmaxIdx]
@@ -1238,9 +1200,6 @@ int APIENTRY wWinMain(
 
 
         }
-        /*double process = getCurrentValue();
-        if(process > 4.0)
-            text(L"Cpu usage: %f", process);*/
 
         // Did we lose iRacing?
         if (numHandles > 0 && !(hdr->status & irsdk_stConnected)) {
@@ -1437,7 +1396,7 @@ HWND checkbox(HWND parent, wchar_t *name, int x, int y) {
         CreateWindowEx(
             0, L"BUTTON", name,
             BS_CHECKBOX | BS_MULTILINE | WS_CHILD | WS_TABSTOP | WS_VISIBLE,
-            x, y, 360, 58, parent, nullptr, hInst, nullptr
+            x, y, 360, 38, parent, nullptr, hInst, nullptr
         );
 
 }
@@ -1527,20 +1486,25 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
             460, 470
         )
     );
+
+    settings.setAltTimerWnd(
+        checkbox(mainWnd, L"Use old sleep timer", 460, 520)
+    );
+
     settings.setCarSpecificWnd(
-        checkbox(mainWnd, L" Use car specific settings?", 460, 520)
+        checkbox(mainWnd, L" Use car specific settings?", 460, 560)
     );
     settings.setReduceWhenParkedWnd(
-        checkbox(mainWnd, L" Reduce force when parked?", 460, 560)
+        checkbox(mainWnd, L" Reduce force when parked?", 460, 600)
     );
     settings.setRunOnStartupWnd(
-        checkbox(mainWnd, L" Run on startup?", 460, 600)
+        checkbox(mainWnd, L" Run on startup?", 460, 640)
     );
     settings.setStartMinimisedWnd(
-        checkbox(mainWnd, L" Start minimised?", 460, 640)
+        checkbox(mainWnd, L" Start minimised?", 460, 680)
     );
     settings.setDebugWnd(
-        checkbox(mainWnd, L"Debug logging?", 460, 680)
+        checkbox(mainWnd, L"Debug logging?", 460, 720)
     );
 
     wndFFBAmount = progressbar(mainWnd, L"Current applied force", 32, 620, 376, IR_MAX);
@@ -1620,6 +1584,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                             settings.setRunOnStartup(!oldValue);
                         else if (wnd == settings.getStartMinimisedWnd())
                             settings.setStartMinimised(!oldValue);
+                        else if (wnd == settings.getAltTimerWnd())
+                            settings.setUseAltTimer(!oldValue);
                         else if (wnd == settings.getDebugWnd()) {
                             settings.setDebug(!oldValue);
                             if (settings.getDebug()) {
@@ -2244,24 +2210,41 @@ void reacquireDIDevice() {
 
 }
 
-inline void nanosleep(LONGLONG ns)
-{
+inline void sleepSpinUntil(PLARGE_INTEGER base, UINT sleep, UINT offset) {
+
+    if (!settings.getUseAltTimer()) {
+        nanosleep(offset);
+    }
+    else {
+        int i = 0;
+        LARGE_INTEGER time;
+        LONGLONG until = base->QuadPart + (offset * freq.QuadPart) / 1000000;
+
+        //if(sleep > 1000)
+        std::this_thread::sleep_for(std::chrono::microseconds(sleep));
+
+        QueryPerformanceCounter(&time);
+        while (time.QuadPart < until) {
+            _asm { pause };
+            QueryPerformanceCounter(&time);
+            // i++;
+        }
+    }
+    //text(L"Paused for %d", i);
+}
+
+inline void nanosleep(LONGLONG ns) {
     /* Declarations */
     HANDLE timer;     /* Timer handle */
     LARGE_INTEGER li; /* Time defintion */
     /* Create timer */
-    timeBeginPeriod(1);
 
-    if (!(timer = CreateWaitableTimerEx(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS)))
-    {
-        timeEndPeriod(1);
+    if (!(timer = CreateWaitableTimerEx(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS))) {
         return;
     }
 
     li.QuadPart = -ns;
-    if (!SetWaitableTimer(timer, &li, 0, NULL, NULL, FALSE)) 
-    {
-        timeEndPeriod(1);
+    if (!SetWaitableTimer(timer, &li, 0, NULL, NULL, FALSE))  {
         CloseHandle(timer);
         return;
     }
@@ -2269,7 +2252,6 @@ inline void nanosleep(LONGLONG ns)
     WaitForSingleObject(timer, INFINITE);
     /* Clean resources */
     CloseHandle(timer);
-    timeEndPeriod(1);
     /* Slept without problems */
     return;
 }

@@ -115,6 +115,7 @@ void Settings::setCarSpecificWnd(HWND wnd) { carSpecificWnd = wnd; }
 void Settings::setRunOnStartupWnd(HWND wnd) { runOnStartupWnd = wnd; }
 void Settings::setStartMinimisedWnd(HWND wnd) { startMinimisedWnd = wnd; }
 void Settings::setDebugWnd(HWND wnd) { debugWnd = wnd; }
+void Settings::setAltTimerWnd(HWND wnd) { altTimerWnd = wnd; }
 
 
 void Settings::clearFfbDevices() {
@@ -365,6 +366,13 @@ void Settings::setDebug(bool enabled) {
     SendMessage(debugWnd, BM_SETCHECK, enabled ? BST_CHECKED : BST_UNCHECKED, NULL);
 }
 
+void Settings::setUseAltTimer(bool enabled)
+{
+    useAltTimer = enabled;
+    SendMessage(altTimerWnd, BM_SETCHECK, enabled ? BST_CHECKED : BST_UNCHECKED, NULL);
+    
+}
+
 float Settings::getBumpsSetting() {
     return sqrt(bumpsFactor / BUMPSFORCE_MULTIPLIER);
 }
@@ -399,6 +407,7 @@ void Settings::readRegSettings(char *car) {
         setReduceWhenParked(true);
         setStartMinimised(false);
         setRunOnStartup(false);
+        setUseAltTimer(false);
         setUseCarSpecific(false, car);
         setWindowPosX(30);
         setWindowPosY(30);
@@ -413,6 +422,7 @@ void Settings::readRegSettings(char *car) {
     setReduceWhenParked(getRegSetting(key, L"reduceWhenParked", true));
     setRunOnStartup(getRegSetting(key, L"runOnStartup", false));
     setStartMinimised(getRegSetting(key, L"startMinimised", false));
+    setUseAltTimer(getRegSetting(key, L"useAltTimer", false));
     setUseCarSpecific(getRegSetting(key, L"useCarSpecific", false), car);
 
     RegCloseKey(key);
@@ -480,7 +490,7 @@ void Settings::writeRegSettings() {
     setRegSetting(key, L"startMinimised", getStartMinimised());
     setRegSetting(key, L"windowPosX", getWindowPosX());
     setRegSetting(key, L"windowPosY", getWindowPosY());
-
+    setRegSetting(key, L"useAltTimer", getUseAltTimer());
     RegCloseKey(key);
 
 }

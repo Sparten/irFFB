@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define IR_MAX 9996
 #define MINFORCE_MULTIPLIER 100
 #define MIN_MAXFORCE 5
-#define MAX_MAXFORCE 300
+#define MAX_MAXFORCE 65
 #define BUMPSFORCE_MULTIPLIER 1.6f
 #define LOADFORCE_MULTIPLIER 0.08f
 #define LONGLOAD_STDPOWER 4
@@ -53,6 +53,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define EDIT_INT 0
 #define EDIT_FLOAT 1
 #define ID_TRAY_EXIT 40000
+#define ID_MAXFORCE_UP 1
+#define ID_MAXFORCE_DOWN 2
 
 #define SVCNAME L"irFFBsvc"
 #define CMDLINE_HGSVC    L"service"
@@ -70,9 +72,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define LOGI_WHEEL_HID_CMD "\x00\xf8\x81\x84\x03\x00\x00\x00\x00"
 #define LOGI_WHEEL_HID_CMD_LEN 9
 
+#define OVERLAY_WINDOW_HEIGHT 41
+
 extern "C" NTSYSAPI NTSTATUS NTAPI NtSetTimerResolution(ULONG DesiredResolution, BOOLEAN SetResolution, PULONG CurrentResolution);
 
 extern "C" NTSYSAPI NTSTATUS NTAPI NtQueryTimerResolution(PULONG MininumResolution, PULONG MaximumResolution, PULONG CurrentResolution);
+
+typedef LONG NTSTATUS, * PNTSTATUS;
+#define STATUS_SUCCESS (0x00000000)
+
+typedef NTSTATUS(WINAPI* RtlGetVersionPtr)(PRTL_OSVERSIONINFOW);
 
 enum ffbType {
     FFBTYPE_360HZ,
@@ -108,17 +117,29 @@ struct understeerCoefs {
     float latAccelDiv;
 };
 
+RTL_OSVERSIONINFOW GetRealOSVersion();
+
 DWORD WINAPI readWheelThread(LPVOID);
 DWORD WINAPI directFFBThread(LPVOID);
 
 ATOM MyRegisterClass(HINSTANCE);
+ATOM MyOverLayRegisterClass(HINSTANCE);
+
 BOOL InitInstance(HINSTANCE, int);
+LRESULT CALLBACK myNcHitTest(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK About(HWND, UINT, WPARAM, LPARAM);
 
 HWND combo(HWND, wchar_t *, int, int); 
 sWins_t *slider(HWND, wchar_t *, int, int, wchar_t *, wchar_t *, bool);
-HWND checkbox(HWND, wchar_t *, int, int); 
+HWND slider(HWND, wchar_t*, int, int, int, int, int, int);
+HWND checkbox(HWND, wchar_t *, int, int, int, int);
+HWND groupox(HWND, wchar_t*, int, int, int, int);
+HWND progressbar(HWND, wchar_t*, int, int, int, int, int);
+
+void ActivateOverLayWindow();
+void DeActivateOverlayWindow();
+void CreateOverlayWindow();
 
 bool initVJD();
 void text(wchar_t *, ...);
@@ -133,7 +154,7 @@ void initDirectInput();
 void releaseDirectInput();
 void reacquireDIDevice();
 inline void sleepSpinUntil(PLARGE_INTEGER, UINT, UINT);
-inline void nanosleep(LONGLONG ns);
+inline void nanosleep(LONGLONG);
 inline int scaleTorque(float);
 inline void setFFB(int);
 void initAll();

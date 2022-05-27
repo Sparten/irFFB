@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "vjoyinterface.h"
 #include "shlwapi.h"
 #include <Hidclass.h>
+#include <uxtheme.h>
 #define MAX_LOADSTRING 100
 
 #define STATUS_CONNECTED_PART 0
@@ -59,11 +60,6 @@ DIEFFESCAPE logiEscape;
 
 Settings settings;
 
-#define ID_SMOOTHPROGRESSCTRL	402
-HWND wndFFBAmount;
-HWND wndFFBClipping;
-
-int progressClippingMax = 500;
 
 float firc6[] = {
     0.1295867f, 0.2311436f, 0.2582509f, 0.1923936f, 0.1156718f, 0.0729534f
@@ -130,7 +126,7 @@ int force = 0;
 volatile float suspForce = 0.0f; 
 volatile float yawForce[DIRECT_INTERP_SAMPLES];
 __declspec(align(16)) volatile float suspForceST[DIRECT_INTERP_SAMPLES];
-bool onTrack = false, stopped = true, deviceChangePending = false, logiWheel = false;
+bool onTrack = false, stopped = true, deviceChangePending = false, logiWheel = false, sleepSpin = false;
 
 volatile int ffbMag = 0;
 volatile bool nearStops = false;
@@ -141,12 +137,18 @@ UINT samples, clippedSamples;
 HANDLE wheelEvent = CreateEvent(nullptr, false, false, L"WheelEvent");
 HANDLE ffbEvent   = CreateEvent(nullptr, false, false, L"FFBEvent");
 
-HWND mainWnd, textWnd, statusWnd;
+#define ID_SMOOTHPROGRESSCTRL	402
+
+int progressClippingMax = 500;
+HWND mainWnd, textWnd, statusWnd, overlayWnd, currentForceWnd, clippingForceWnd, currentForceOverlayWnd, clippingForceOverlayWnd, overlayMoveWnd;
 
 LARGE_INTEGER freq;
 
 int vjDev = 1;
 FFB_DATA ffbPacket;
+RTL_OSVERSIONINFOW winVer;
+
+DWORD windowInitialExtendedState = NULL;
 
 
 float *floatvarptr(const char *data, const char *name) {
@@ -202,6 +204,24 @@ bool IsSavedDisplayActive()
 
     return has;
 }
+
+
+RTL_OSVERSIONINFOW GetRealOSVersion() {
+    HMODULE hMod = ::GetModuleHandleW(L"ntdll.dll");
+    if (hMod) {
+        RtlGetVersionPtr fxPtr = (RtlGetVersionPtr)::GetProcAddress(hMod, "RtlGetVersion");
+        if (fxPtr != nullptr) {
+            RTL_OSVERSIONINFOW rovi = { 0 };
+            rovi.dwOSVersionInfoSize = sizeof(rovi);
+            if (STATUS_SUCCESS == fxPtr(&rovi)) {
+                return rovi;
+            }
+        }
+    }
+    RTL_OSVERSIONINFOW rovi = { 0 };
+    return rovi;
+}
+
 // Thread that reads the wheel, writes to vJoy and updates the DI effect
 DWORD WINAPI readWheelThread(LPVOID lParam) {
 
@@ -483,9 +503,7 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
             sleepSpinUntil(&start, 2000, 2760 * i);
             //nanosleep(2760 * i);
             setFFB(r);
-
         }
-
     }
 
     return 0;
@@ -692,7 +710,7 @@ int APIENTRY wWinMain(
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
     LoadStringW(hInstance, IDC_IRFFB, szWindowClass, MAX_LOADSTRING);
     MyRegisterClass(hInstance);
-
+    MyOverLayRegisterClass(hInstance);
     // Setup DI FFB effect
     pforce.dwMagnitude = 0;
     pforce.dwPeriod = INFINITE;
@@ -728,34 +746,57 @@ int APIENTRY wWinMain(
 
     if (!InitInstance(hInstance, nCmdShow))
         return FALSE;
-
-    // Hack! try set better sleep resulution with  undocumented NtSetTimerResolution, no error checking or nothing for now
-    ULONG currentRes;
-    ULONG CurrentResolution = 0;
-    ULONG MininumResolution = 0;
-    ULONG MaximumResolution = 0;
-    
-    NtQueryTimerResolution( &MaximumResolution,  &MininumResolution,  &CurrentResolution);
-
-    NtSetTimerResolution(2500, TRUE, &currentRes);
-
-    
+      
     memset(car, 0, sizeof(car));
     setCarStatus(car);
     setConnectedStatus(false);
     setOnTrackStatus(false);
+
     settings.readGenericSettings();
     settings.readRegSettings(car);
+    // Hack! try set better sleep resulution with  undocumented NtSetTimerResolution, no error checking or nothing for now
+    ULONG CurrentResolution = 0;
+    ULONG MininumResolution = 0;
+    ULONG MaximumResolution = 0;
+    if (STATUS_SUCCESS == NtQueryTimerResolution(&MininumResolution, &MaximumResolution, &CurrentResolution))
+    {
+        NtSetTimerResolution(MaximumResolution, TRUE, &CurrentResolution);     
+    }
+    else
+    {
+        text(L"Unable to set high resolution timer, reverting to old sleep routine");
+    }
+
+    sleepSpin = CurrentResolution == 0 || CurrentResolution > 10000;
     
+    winVer = GetRealOSVersion();
+    
+    if (winVer.dwMajorVersion < 10 || (winVer.dwMajorVersion >= 10 && winVer.dwBuildNumber < 17134) || sleepSpin)
+    {
+        settings.setUseAltTimer(true);
+        EnableWindow(settings.getAltTimerWnd(), FALSE);
+    }
+    if (settings.getShowForceOverlay())
+    {
+        SetLayeredWindowAttributes(overlayWnd, 0, settings.getOverlayTransparency(), LWA_ALPHA);
+        SetWindowPos(overlayWnd, NULL, settings.getWindowPosX(), settings.getWindowPosY(), 200, OVERLAY_WINDOW_HEIGHT - 20, SWP_SHOWWINDOW | SWP_NOZORDER | SWP_NOACTIVATE);
+        EnableWindow(overlayMoveWnd, TRUE);
+    }
+    if (RegisterHotKey(mainWnd, 1, MOD_ALT | MOD_CONTROL | MOD_NOREPEAT, VK_UP))  
+    {
+        text(L"Hotkey 'ALT + CONTROL + UP' registered, Max force --");
+    }
+    if (RegisterHotKey(mainWnd, 2, MOD_ALT | MOD_CONTROL | MOD_NOREPEAT, VK_DOWN))
+    {
+        text(L"Hotkey 'ALT + CONTROL + DOWN' registered, Max force ++");
+    }
 
-    int posX = settings.getWindowPosX();
-
-    int posY = settings.getWindowPosY();
-
-    RECT workArea;
-    SystemParametersInfo(SPI_GETWORKAREA, 0, &workArea, 0);
-    posX += workArea.left;
-    posY += workArea.top;
+    //int posX = settings.getWindowPosX();
+    //int posY = settings.getWindowPosY();
+    //RECT workArea;
+    //SystemParametersInfo(SPI_GETWORKAREA, 0, &workArea, 0);
+    //posX += workArea.left;
+    //posY += workArea.top;
 
     // make sure the window is not completely out of sight
     /*int max_x = GetSystemMetrics(SM_CXSCREEN) -
@@ -825,10 +866,6 @@ int APIENTRY wWinMain(
              debug(L"Redline is %d rpm", (int)redline);
             
             getBuildInCarUsteerCoeffs(car);
-            //EnableWindow(settings.getUndersteerWnd()->trackbar, usCoefs != nullptr);
-            //EnableWindow(settings.getUndersteerWnd()->value, usCoefs != nullptr);
-            //EnableWindow(settings.getUndersteerOffsetWnd()->trackbar, usCoefs != nullptr);
-            //EnableWindow(settings.getUndersteerOffsetWnd()->value, usCoefs != nullptr);
 
             // Inform iRacing of the maxForce setting
             irsdk_broadcastMsg(irsdk_BroadcastFFBCommand, irsdk_FFBCommand_MaxForce, (float)settings.getMaxForce());
@@ -1263,6 +1300,26 @@ ATOM MyRegisterClass(HINSTANCE hInstance) {
 
 }
 
+ATOM MyOverLayRegisterClass(HINSTANCE hInstance) {
+
+    WNDCLASSEXW wcex;
+
+    wcex.cbSize = sizeof(WNDCLASSEX);
+
+    wcex.style = CS_HREDRAW | CS_VREDRAW;
+    wcex.lpfnWndProc = WndProc;
+    wcex.cbClsExtra = 0;
+    wcex.cbWndExtra = 0;
+    wcex.hInstance = hInstance;
+    wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_IRFFB));
+    wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 2);
+    wcex.lpszClassName = L"irFFbOverlay";
+    wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
+
+    return RegisterClassExW(&wcex);
+
+}
 LRESULT CALLBACK EditWndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR subId, DWORD_PTR rData) {
 
     if (msg == WM_CHAR) {
@@ -1390,13 +1447,28 @@ sWins_t *slider(HWND parent, wchar_t *name, int x, int y, wchar_t *start, wchar_
 
 }
 
-HWND checkbox(HWND parent, wchar_t *name, int x, int y) {
+HWND slider(HWND parent, wchar_t* name, int x, int y, int width, int height, int start, int end) {
+
+    HWND slider = CreateWindowExW(
+        0, TRACKBAR_CLASS, name,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_TOOLTIPS | TBS_TRANSPARENTBKGND | TBS_NOTICKS,
+        x, y, width, height,
+        parent, NULL, hInst, NULL
+    );
+
+    SendMessage(slider, TBM_SETRANGE, (WPARAM)TRUE, MAKELONG(start, end));
+
+    return slider;
+
+}
+
+HWND checkbox(HWND parent, wchar_t *name, int x, int y, int width = 360, int height = 20) {
 
     return 
         CreateWindowEx(
             0, L"BUTTON", name,
             BS_CHECKBOX | BS_MULTILINE | WS_CHILD | WS_TABSTOP | WS_VISIBLE,
-            x, y, 360, 38, parent, nullptr, hInst, nullptr
+            x, y, width, height, parent, nullptr, hInst, nullptr
         );
 
 }
@@ -1412,31 +1484,84 @@ HWND groupox(HWND parent, wchar_t* name, int x, int y, int width, int height) {
 
 }
 
-HWND progressbar(HWND parent, wchar_t* name, int x, int y, int width, int max)
-{   
-    CreateWindowW(
-        L"STATIC", name,
-        WS_CHILD | WS_VISIBLE,
-        x, y, 300, 20, parent, NULL, hInst, NULL
-    );
-    
-    HWND hWnd  = ::CreateWindowEx(
+HWND progressbar(HWND parent, wchar_t* name, int x, int y, int width, int height, int max)
+{
+
+    if (name != nullptr)
+        CreateWindowW(
+            L"STATIC", name,
+            WS_CHILD | WS_VISIBLE,
+            x, y, width, 20, parent, NULL, hInst, NULL
+        );
+
+    HWND hWnd = ::CreateWindowEx(
         0,
         PROGRESS_CLASS,
         name,
         WS_CHILD | WS_VISIBLE | PBS_SMOOTH,
         x,
-        y + 20,
+        name == nullptr ? y : y + 20,
         width,
-        30,
+        height,
         parent,
         (HMENU)ID_SMOOTHPROGRESSCTRL,
         hInst,
         NULL);
-    ::SendMessage(hWnd, PBM_SETRANGE32, 0 ,(WPARAM)(INT)max);
+    ::SendMessage(hWnd, PBM_SETRANGE32, 0, (WPARAM)(INT)max);
 
     return hWnd;
 }
+
+void ActivateOverLayWindow()
+{
+    if (windowInitialExtendedState == NULL)
+    {
+        windowInitialExtendedState = GetWindowLongPtr(overlayWnd, GWL_EXSTYLE);
+    }
+    SetWindowPos(overlayWnd, NULL, settings.getWindowPosX(), settings.getWindowPosY(), 200, OVERLAY_WINDOW_HEIGHT, SWP_SHOWWINDOW | SWP_NOZORDER | SWP_NOACTIVATE);
+    ShowWindow(settings.getOverlayMaxForceWnd(), SW_SHOW);
+    SetWindowLongPtr(overlayWnd, GWL_EXSTYLE, windowInitialExtendedState ^ WS_EX_LAYERED);
+}
+
+void DeActivateOverlayWindow()
+{
+    if (windowInitialExtendedState == NULL)
+    {
+        windowInitialExtendedState = GetWindowLongPtr(overlayWnd, (int)GWL_EXSTYLE);
+    }
+    SetWindowLongPtr(overlayWnd, GWL_EXSTYLE, windowInitialExtendedState);
+    ShowWindow(settings.getOverlayMaxForceWnd(), SW_HIDE);
+    SetWindowPos(overlayWnd, NULL, settings.getWindowPosX(), settings.getWindowPosY(), 200, OVERLAY_WINDOW_HEIGHT - 20, SWP_SHOWWINDOW | SWP_NOZORDER | SWP_NOACTIVATE);
+    SetLayeredWindowAttributes(overlayWnd, 0, settings.getOverlayTransparency(), LWA_ALPHA);
+}
+
+void CreateOverlayWindow()
+{
+    DWORD extendedStyle = WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOPMOST;
+    overlayWnd = CreateWindowExW(extendedStyle,
+        L"irFFbOverlay", L"irFFb Overlay",
+        WS_VISIBLE | WS_POPUP,
+        //WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME,
+        CW_USEDEFAULT, CW_USEDEFAULT, 200, OVERLAY_WINDOW_HEIGHT,
+        NULL, NULL, hInst, NULL
+    );
+
+    currentForceOverlayWnd = progressbar(overlayWnd, nullptr, 3, 3, 150, 15, IR_MAX);
+    clippingForceOverlayWnd = progressbar(overlayWnd, nullptr, 150, 3, 46, 15, progressClippingMax);
+
+    settings.setOverlayMaxForceWnd(slider(overlayWnd, L"max force", 4, 22, 192, 15, 5, 65));
+    SendMessage(clippingForceOverlayWnd, PBM_SETSTATE, PBST_ERROR, 0);
+
+    SetWindowSubclass(currentForceOverlayWnd, myNcHitTest, 0, 0);
+    SetWindowSubclass(clippingForceOverlayWnd, myNcHitTest, 0, 0);
+
+    SetLayeredWindowAttributes(overlayWnd, 0, 255, LWA_ALPHA);
+
+    ShowWindow(overlayWnd, SW_HIDE);
+    UpdateWindow(overlayWnd);
+
+}
+
 
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 
@@ -1447,13 +1572,14 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     mainWnd = CreateWindowW(
         szWindowClass, szTitle,
         WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME,
-        CW_USEDEFAULT, CW_USEDEFAULT, 864, 840,
+        CW_USEDEFAULT, CW_USEDEFAULT, 864, 780,
         NULL, NULL, hInst, NULL
     );
 
     if (!mainWnd)
         return FALSE;
-    
+    CreateOverlayWindow();
+
     memset(&niData, 0, sizeof(niData));
     niData.uVersion = NOTIFYICON_VERSION;
     niData.cbSize = NOTIFYICONDATA_V1_SIZE;
@@ -1479,36 +1605,35 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     settings.setBumpsWnd(slider(mainWnd, L"Suspension bumps:", 464, 290, L"0", L"100", true));   
     settings.setSopWnd(slider(mainWnd, L"SoP effect:", 464, 350, L"0", L"100", true));
     settings.setSopOffsetWnd(slider(mainWnd, L"SoP offset:", 464, 410, L"0", L"100", true));
-    settings.setUse360Wnd(
-        checkbox(
-            mainWnd, 
-            L" Use 360 Hz telemetry for suspension effects\r\n in direct modes?",
-            460, 470
-        )
-    );
-
-    settings.setAltTimerWnd(
-        checkbox(mainWnd, L"Use old sleep timer", 460, 520)
-    );
+    settings.setUse360Wnd(checkbox(mainWnd, L" Use 360 Hz telemetry for suspension effects\r\n in direct modes?", 460, 470, 360, 38));
 
     settings.setCarSpecificWnd(
-        checkbox(mainWnd, L" Use car specific settings?", 460, 560)
+        checkbox(mainWnd, L" Use car specific settings?", 460, 510)
     );
     settings.setReduceWhenParkedWnd(
-        checkbox(mainWnd, L" Reduce force when parked?", 460, 600)
+        checkbox(mainWnd, L" Reduce force when parked?", 460, 540)
     );
     settings.setRunOnStartupWnd(
-        checkbox(mainWnd, L" Run on startup?", 460, 640)
+        checkbox(mainWnd, L" Run on startup?", 460, 570)
     );
     settings.setStartMinimisedWnd(
-        checkbox(mainWnd, L" Start minimised?", 460, 680)
+        checkbox(mainWnd, L" Start minimised?", 460, 600)
     );
     settings.setDebugWnd(
-        checkbox(mainWnd, L"Debug logging?", 460, 720)
+        checkbox(mainWnd, L"Debug logging?", 460, 630)
     );
 
-    wndFFBAmount = progressbar(mainWnd, L"Current applied force", 32, 620, 376, IR_MAX);
-    wndFFBClipping = progressbar(mainWnd, L"Clipping force", 32, 680, 376, progressClippingMax);
+    currentForceWnd = progressbar(mainWnd, L"Current applied force", 32, 645, 300, 20, IR_MAX);
+    clippingForceWnd = progressbar(mainWnd, L"Clipping force", 300, 645, 110, 20, progressClippingMax);
+
+    SendMessage(clippingForceWnd, PBM_SETSTATE, PBST_ERROR, 0);
+
+    groupox(mainWnd, L"Overlay:", 32, 500, 377, 140);
+    settings.setForceOverlayWnd(checkbox(mainWnd, L"Show overlay?", 40, 520, 180));
+    overlayMoveWnd = checkbox(mainWnd, L"Enable input?", 40, 550, 180);
+    EnableWindow(overlayMoveWnd,FALSE);
+    
+    settings.setOverlayTransparencyWnd(slider(mainWnd, L"Overlay transparency:", 44, 580, L"0", L"255", false));
 
     int statusParts[] = { 256, 424, 864 };
 
@@ -1522,7 +1647,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     textWnd = CreateWindowEx(
         WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_VISIBLE | WS_VSCROLL | WS_CHILD | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL,
-        32, 372, 376, 240,
+        32, 372, 376, 120,
         mainWnd, NULL, hInst, NULL
     );
     SendMessage(textWnd, EM_SETLIMITTEXT, WPARAM(256000), 0);
@@ -1583,9 +1708,32 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                         else if (wnd == settings.getRunOnStartupWnd())
                             settings.setRunOnStartup(!oldValue);
                         else if (wnd == settings.getStartMinimisedWnd())
-                            settings.setStartMinimised(!oldValue);
-                        else if (wnd == settings.getAltTimerWnd())
-                            settings.setUseAltTimer(!oldValue);
+                            settings.setStartMinimised(!oldValue);                           
+                        else if (wnd == settings.getForceOverlayWnd())
+                        {
+                            settings.setShowForceOverlay(!oldValue);
+                            if (!oldValue)
+                            {
+                                EnableWindow(overlayMoveWnd, TRUE);
+                                ShowWindow(overlayWnd, SW_SHOW);
+                            }
+                            else
+                            {
+                                EnableWindow(overlayMoveWnd, FALSE);
+                                ShowWindow(overlayWnd, SW_HIDE);
+                            }
+                        }
+                        else if (wnd == overlayMoveWnd)
+                        {                            
+                            if (!oldValue)
+                                ActivateOverLayWindow();
+                            else
+                                DeActivateOverlayWindow();
+                            SendMessage(overlayMoveWnd, BM_SETCHECK, !oldValue ? BST_CHECKED : BST_UNCHECKED, NULL);
+
+                        }
+
+
                         else if (wnd == settings.getDebugWnd()) {
                             settings.setDebug(!oldValue);
                             if (settings.getDebug()) {
@@ -1607,6 +1755,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                                 debugHnd = INVALID_HANDLE_VALUE;
                             }
                         }
+
                     }
                     return DefWindowProc(hWnd, message, wParam, lParam);
             }
@@ -1630,12 +1779,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 settings.setUndersteerYawRateMult(reinterpret_cast<float&>(wParam), wnd);
             else if (wnd == settings.getUndersteerlatAccelDivWnd()->value)
                 settings.setUndersteerlatAccelDiv(reinterpret_cast<float&>(wParam), wnd);
+            else if (wnd == settings.getOverlayTransparencyWnd()->value)
+            {
+                settings.setOverlayTransparency(reinterpret_cast<float&>(wParam), wnd);
+                SetLayeredWindowAttributes(overlayWnd, 0, settings.getOverlayTransparency(), LWA_ALPHA);
+            }
+
         }
         break;
              
 
         case WM_HSCROLL: {
-            if (wnd == settings.getMaxWnd()->trackbar)
+            if (wnd == settings.getMaxWnd()->trackbar || wnd == settings.getOverlayMaxForceWnd())
                 settings.setMaxForce(SendMessage(wnd, TBM_GETPOS, 0, 0), wnd);
             else if (wnd == settings.getMinWnd()->trackbar)
                 settings.setMinForce(SendMessage(wnd, TBM_GETPOS, 0, 0), wnd);
@@ -1655,6 +1810,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 settings.setUndersteerYawRateMult((float)SendMessage(wnd, TBM_GETPOS, 0, 0), wnd);
             else if (wnd == settings.getUndersteerlatAccelDivWnd()->trackbar)
                 settings.setUndersteerlatAccelDiv((float)SendMessage(wnd, TBM_GETPOS, 0, 0), wnd);
+            else if (wnd == settings.getOverlayTransparencyWnd()->trackbar)
+            {
+                settings.setOverlayTransparency((float)SendMessage(wnd, TBM_GETPOS, 0, 0), wnd);
+                SetLayeredWindowAttributes(overlayWnd, 0, settings.getOverlayTransparency(), LWA_ALPHA);
+            }
+
         }
         break;
 
@@ -1719,9 +1880,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         break;
         case WM_WINDOWPOSCHANGED:
         {
-            WINDOWPOS* winPos = (WINDOWPOS*)lParam;
-            settings.setWindowPosX(winPos->x);
-            settings.setWindowPosY(winPos->y);
+            if (hWnd == overlayWnd)
+            {
+                WINDOWPOS* winPos = (WINDOWPOS*)lParam;
+                settings.setWindowPosX(winPos->x);
+                settings.setWindowPosY(winPos->y);
+            }
         }
         break;
 
@@ -1762,6 +1926,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         }
         break;
 
+        case WM_NCHITTEST: 
+        {     
+            LRESULT hit = DefWindowProc(hWnd, message, wParam, lParam);
+            if (hWnd == overlayWnd && hit == HTCLIENT)                
+                hit = HTCAPTION;                
+
+            return hit;
+        }
+        break;
+        case WM_HOTKEY:
+        {
+            int wmId = LOWORD(wParam);
+            if (wmId == ID_MAXFORCE_UP)
+                settings.setMaxForce(settings.getMaxForce() - 1, (HWND)-1);
+            
+            if(wmId == ID_MAXFORCE_DOWN)
+                settings.setMaxForce(settings.getMaxForce() + 1, (HWND)-1);
+
+            return DefWindowProc(hWnd, message, wParam, lParam);
+        }
+        break;
+
         default:
             return DefWindowProc(hWnd, message, wParam, lParam);
     }
@@ -1788,6 +1974,21 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
     return (INT_PTR)FALSE;
 
+}
+
+LRESULT CALLBACK myNcHitTest(HWND hWnd, UINT uMsg, WPARAM wParam,
+    LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+{
+    switch (uMsg)
+    {
+    case WM_NCHITTEST:
+    {
+        LRESULT hit = DefSubclassProc(hWnd, uMsg, wParam, lParam);
+        if (hit == HTCLIENT) hit = HTTRANSPARENT;
+        return hit;
+    }
+    }
+    return DefSubclassProc(hWnd, uMsg, wParam, lParam);
 }
 
 void text(wchar_t *fmt, ...) {
@@ -2220,8 +2421,8 @@ inline void sleepSpinUntil(PLARGE_INTEGER base, UINT sleep, UINT offset) {
         LARGE_INTEGER time;
         LONGLONG until = base->QuadPart + (offset * freq.QuadPart) / 1000000;
 
-        //if(sleep > 1000)
-        std::this_thread::sleep_for(std::chrono::microseconds(sleep));
+        if(!sleepSpin || sleep > 1000)
+            std::this_thread::sleep_for(std::chrono::microseconds(sleep));
 
         QueryPerformanceCounter(&time);
         while (time.QuadPart < until) {
@@ -2296,13 +2497,21 @@ inline void setFFB(int mag) {
 
     ffbMag = mag;
 
-    ::SendMessage(wndFFBAmount, PBM_SETPOS, (WPARAM)(INT)abs(mag), 0);
+    ::SendMessage(currentForceWnd, PBM_SETPOS, (WPARAM)(INT)abs(mag), 0);
     if(clippedAmmount > progressClippingMax)
     {
         progressClippingMax = clippedAmmount;
-        ::SendMessage(wndFFBClipping, PBM_SETRANGE32, 0, (WPARAM)(INT)progressClippingMax);
-    }       
-    ::SendMessage(wndFFBClipping, PBM_SETPOS, (WPARAM)(INT)abs(clippedAmmount), 0);
+        ::SendMessage(clippingForceWnd, PBM_SETRANGE32, 0, (WPARAM)(INT)progressClippingMax);
+        ::SendMessage(clippingForceOverlayWnd, PBM_SETRANGE32, 0, (WPARAM)(INT)progressClippingMax);
+    }
+    
+    ::SendMessage(clippingForceWnd, PBM_SETPOS, (WPARAM)(INT)abs(clippedAmmount), 0);
+
+    if (settings.getShowForceOverlay())
+    {
+        ::SendMessage(currentForceOverlayWnd, PBM_SETPOS, (WPARAM)(INT)abs(mag), 0);
+        ::SendMessage(clippingForceOverlayWnd, PBM_SETPOS, (WPARAM)(INT)abs(clippedAmmount), 0);
+    }
 }
 
 bool initVJD() {

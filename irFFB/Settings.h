@@ -40,6 +40,9 @@ class Settings {
         sWins_t* getUndersteerYawRateMultWnd() { return understeerYawRateMultWnd; };
         void setUndersteerlatAccelDivWnd(sWins_t*);
         sWins_t* getUndersteerlatAccelDivWnd() { return understeerlatAccelDivWnd; };
+        
+        void setOverlayTransparencyWnd(sWins_t*);
+        sWins_t* getOverlayTransparencyWnd() { return overlayTransparencyWnd; };
 
         void setUse360Wnd(HWND);
         HWND getUse360Wnd() { return use360Wnd; };
@@ -55,7 +58,10 @@ class Settings {
         HWND getDebugWnd() { return debugWnd; };
         void setAltTimerWnd(HWND);
         HWND getAltTimerWnd() { return altTimerWnd; };
-
+        void setForceOverlayWnd(HWND);
+        HWND getForceOverlayWnd() { return forceOverlayWnd; };
+        void setOverlayMaxForceWnd(HWND);
+        HWND getOverlayMaxForceWnd() { return overlayMaxForceWnd; };
 
         void clearFfbDevices();
         void addFfbDevice(GUID dev, const wchar_t *);
@@ -85,6 +91,10 @@ class Settings {
         float getUndersteerYawRateMult() { return understeerYawRateMult; };
         bool setUndersteerlatAccelDiv(float, HWND);
         float getUndersteerlatAccelDiv() { return understeerlatAccelDiv; };
+        bool setOverlayTransparency(float, HWND);
+        float getOverlayTransparency() { return overlayTransparency; };
+        void enableOverlayTransparencyWnd();
+        void disableOverlayTransparencyWnd();
         void setUse360ForDirect(bool);
         bool getUse360ForDirect() { return use360ForDirect; };
         void setUseCarSpecific(bool, char *);
@@ -105,6 +115,8 @@ class Settings {
 
         void setUseAltTimer(bool);
         bool getUseAltTimer() { return useAltTimer; };
+        void setShowForceOverlay(bool);
+        bool getShowForceOverlay() { return showForceOverlay; };
 
 
         float getBumpsSetting();
@@ -121,13 +133,17 @@ class Settings {
         std::wstring getLogPath();
 
     private:
-        HWND devWnd, ffbWnd;
-        sWins_t *minWnd, *maxWnd, *bumpsWnd, *dampingWnd, *sopWnd, *sopOffsetWnd, *understeerWnd, *understeerOffsetWnd, *understeerYawRateMultWnd, *understeerlatAccelDivWnd;
-        HWND use360Wnd, carSpecificWnd, reduceWhenParkedWnd;
-        HWND runOnStartupWnd, startMinimisedWnd, debugWnd, altTimerWnd;
+        HWND devWnd, ffbWnd, overlayMaxForceWnd;
+        sWins_t *minWnd, *maxWnd, *bumpsWnd, *dampingWnd, *sopWnd, *sopOffsetWnd, 
+            *understeerWnd, *understeerOffsetWnd, *understeerYawRateMultWnd, *understeerlatAccelDivWnd, 
+            *overlayTransparencyWnd;
+        HWND use360Wnd, carSpecificWnd, reduceWhenParkedWnd, altTimerWnd, forceOverlayWnd;
+        HWND runOnStartupWnd, startMinimisedWnd, debugWnd;
         int ffbType, ffdeviceIdx, minForce, maxForce;
-        float scaleFactor, bumpsFactor, dampingFactor, sopFactor, sopOffset, understeerFactor, understeerOffset, understeerYawRateMult, understeerlatAccelDiv;
-        bool use360ForDirect, useCarSpecific, debug, useAltTimer;
+        float scaleFactor, bumpsFactor, dampingFactor, sopFactor, sopOffset, 
+            understeerFactor, understeerOffset, understeerYawRateMult, understeerlatAccelDiv, 
+            overlayTransparency;
+        bool use360ForDirect, useCarSpecific, debug, useAltTimer, showForceOverlay;
         bool reduceWhenParked, runOnStartup, startMinimised;
         GUID devGuid = GUID_NULL, ffdevices[MAX_FFB_DEVICES];
         wchar_t strbuf[64];

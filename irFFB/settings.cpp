@@ -109,6 +109,7 @@ void Settings::setUndersteerWnd(sWins_t *wnd) { understeerWnd = wnd; }
 void Settings::setUndersteerOffsetWnd(sWins_t *wnd) { understeerOffsetWnd = wnd; }
 void Settings::setUndersteerYawRateMultWnd(sWins_t* wnd) { understeerYawRateMultWnd = wnd; }
 void Settings::setUndersteerlatAccelDivWnd(sWins_t* wnd) { understeerlatAccelDivWnd = wnd; }
+void Settings::setOverlayTransparencyWnd(sWins_t* wnd) { overlayTransparencyWnd = wnd;}
 void Settings::setUse360Wnd(HWND wnd) { use360Wnd = wnd; }
 void Settings::setReduceWhenParkedWnd(HWND wnd) { reduceWhenParkedWnd = wnd; }
 void Settings::setCarSpecificWnd(HWND wnd) { carSpecificWnd = wnd; }
@@ -116,6 +117,13 @@ void Settings::setRunOnStartupWnd(HWND wnd) { runOnStartupWnd = wnd; }
 void Settings::setStartMinimisedWnd(HWND wnd) { startMinimisedWnd = wnd; }
 void Settings::setDebugWnd(HWND wnd) { debugWnd = wnd; }
 void Settings::setAltTimerWnd(HWND wnd) { altTimerWnd = wnd; }
+void Settings::setForceOverlayWnd(HWND wnd) { forceOverlayWnd = wnd; }
+
+void Settings::setOverlayMaxForceWnd(HWND wnd)
+{
+    overlayMaxForceWnd = wnd;
+    SendMessage(overlayMaxForceWnd, TBM_SETRANGE, TRUE, MAKELPARAM(MIN_MAXFORCE, 65));
+}
 
 
 void Settings::clearFfbDevices() {
@@ -184,6 +192,7 @@ bool Settings::setMaxForce(int max, HWND wnd) {
         swprintf_s(strbuf, L"%d", max);
         SendMessage(maxWnd->value, WM_SETTEXT, NULL, LPARAM(strbuf));
     }
+    SendMessage(getOverlayMaxForceWnd(), TBM_SETPOS, TRUE, maxForce);
     scaleFactor = (float)DI_MAX / maxForce;
     irsdk_broadcastMsg(
         irsdk_BroadcastFFBCommand, irsdk_FFBCommand_MaxForce, (float)maxForce
@@ -299,6 +308,34 @@ bool Settings::setUndersteerlatAccelDiv(float div, HWND wnd)
     return true;
 }
 
+bool Settings::setOverlayTransparency(float transparency, HWND wnd)
+{
+    if (transparency < overlayTransparencyWnd->min || transparency > overlayTransparencyWnd->max)
+        return false;
+    overlayTransparency = transparency;
+    if (wnd != overlayTransparencyWnd->trackbar)
+        SendMessage(overlayTransparencyWnd->trackbar, TBM_SETPOS, TRUE, (int)transparency);
+    if (wnd != overlayTransparencyWnd->value) {
+        swprintf_s(strbuf, L"%.1f", transparency);
+        SendMessage(overlayTransparencyWnd->value, WM_SETTEXT, NULL, LPARAM(strbuf));
+    }
+    return true;
+}
+
+void Settings::enableOverlayTransparencyWnd()
+{
+    EnableWindow(overlayTransparencyWnd->label, TRUE);
+    EnableWindow(overlayTransparencyWnd->value, TRUE);
+    EnableWindow(overlayTransparencyWnd->trackbar, TRUE);
+}
+
+void Settings::disableOverlayTransparencyWnd()
+{
+    EnableWindow(overlayTransparencyWnd->label, FALSE);
+    EnableWindow(overlayTransparencyWnd->value, FALSE);
+    EnableWindow(overlayTransparencyWnd->trackbar, FALSE);
+}
+
 void Settings::setUse360ForDirect(bool set) {
     use360ForDirect = set;
     SendMessage(use360Wnd, BM_SETCHECK, set ? BST_CHECKED : BST_UNCHECKED, NULL);
@@ -322,7 +359,6 @@ void Settings::setUseCarSpecific(bool set, char *car) {
     useCarSpecific = set;
     SendMessage(carSpecificWnd, BM_SETCHECK, set ? BST_CHECKED : BST_UNCHECKED, NULL);
     writeCarSpecificSetting();
-
 }
 
 void Settings::setReduceWhenParked(bool reduce) { 
@@ -369,8 +405,17 @@ void Settings::setDebug(bool enabled) {
 void Settings::setUseAltTimer(bool enabled)
 {
     useAltTimer = enabled;
-    SendMessage(altTimerWnd, BM_SETCHECK, enabled ? BST_CHECKED : BST_UNCHECKED, NULL);
-    
+    SendMessage(altTimerWnd, BM_SETCHECK, enabled ? BST_CHECKED : BST_UNCHECKED, NULL);    
+}
+
+void Settings::setShowForceOverlay(bool enabled)
+{
+    showForceOverlay = enabled;
+    SendMessage(forceOverlayWnd, BM_SETCHECK, enabled ? BST_CHECKED : BST_UNCHECKED, NULL);
+    if (enabled)
+        enableOverlayTransparencyWnd();
+    else
+        disableOverlayTransparencyWnd();
 }
 
 float Settings::getBumpsSetting() {
@@ -409,8 +454,10 @@ void Settings::readRegSettings(char *car) {
         setRunOnStartup(false);
         setUseAltTimer(false);
         setUseCarSpecific(false, car);
+        setShowForceOverlay(false);
         setWindowPosX(30);
         setWindowPosY(30);
+        setOverlayTransparency(255.0f, (HWND)-1);
         return;
     }
 
@@ -424,7 +471,10 @@ void Settings::readRegSettings(char *car) {
     setStartMinimised(getRegSetting(key, L"startMinimised", false));
     setUseAltTimer(getRegSetting(key, L"useAltTimer", false));
     setUseCarSpecific(getRegSetting(key, L"useCarSpecific", false), car);
-
+    setShowForceOverlay(getRegSetting(key, L"showForceOverlay", false));
+    setWindowPosX(getRegSetting(key, L"windowPosX", 30));
+    setWindowPosY(getRegSetting(key, L"windowPosY", 30));
+    setOverlayTransparency(getRegSetting(key, L"overlayTransparency", 255.0f), (HWND)-1);
     RegCloseKey(key);
     
 }
@@ -448,8 +498,7 @@ void Settings::readGenericSettings() {
         setUse360ForDirect(true);
         setUndersteerlatAccelDiv(60.0f, (HWND)-1);
         setUndersteerYawRateMult(0.0f, (HWND)-1);
-        setWindowPosX(30);
-        setWindowPosY(30);
+
         return;
     }
 
@@ -465,8 +514,7 @@ void Settings::readGenericSettings() {
     setUse360ForDirect(getRegSetting(key, L"use360ForDirect", true));
     setUndersteerlatAccelDiv(getRegSetting(key, L"understeerlatAccelDiv", 60.0f), (HWND)-1);
     setUndersteerYawRateMult(getRegSetting(key, L"understeerYawRateMult", 0.0f), (HWND)-1);
-    setWindowPosX(getRegSetting(key, L"windowPosX", 30));
-    setWindowPosY(getRegSetting(key, L"windowPosY", 30));
+    
     RegCloseKey(key);
 
 }
@@ -491,6 +539,8 @@ void Settings::writeRegSettings() {
     setRegSetting(key, L"windowPosX", getWindowPosX());
     setRegSetting(key, L"windowPosY", getWindowPosY());
     setRegSetting(key, L"useAltTimer", getUseAltTimer());
+    setRegSetting(key, L"showForceOverlay", getShowForceOverlay());
+    setRegSetting(key, L"overlayTransparency", getOverlayTransparency());
     RegCloseKey(key);
 
 }
@@ -514,6 +564,7 @@ void Settings::writeGenericSettings() {
     setRegSetting(key, L"understeerOffset", understeerOffset);
     setRegSetting(key, L"understeerlatAccelDiv", understeerlatAccelDiv);
     setRegSetting(key, L"understeerYawRateMult", understeerYawRateMult);
+
     RegCloseKey(key);
 
 }

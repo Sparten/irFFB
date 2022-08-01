@@ -779,8 +779,11 @@ std::wstring Settings::getLogPath() {
     }
 
     GetLocalTime(&lt);
-    //std::string fmtFileName = std::format("irFFB-%d-%02d-%02d-%02d-%02d-%02d.log", lt.wYear, lt.wMonth, lt.wDay, lt.wHour, lt.wMinute, lt.wSecond);
-    //fsPath.append(fmtFileName);
+
+    char logfile[256];
+    sprintf_s(logfile, 256, "irFFB-%d-%02d-%02d-%02d-%02d-%02d.log", lt.wYear, lt.wMonth, lt.wDay, lt.wHour, lt.wMinute, lt.wSecond);
+    std::string fmtFileName(logfile);
+    fsPath.append(fmtFileName);
 
     ::debug((wchar_t*)fsPath.wstring().c_str(), L"");
     return fsPath.wstring();

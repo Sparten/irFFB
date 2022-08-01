@@ -7,7 +7,7 @@
 
 #include "targetver.h"
 
-#define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers
+//#define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers
 // Windows Header Files:
 #include <windows.h>
 
@@ -34,6 +34,7 @@
 #include <newdev.h>
 #include <devguid.h>
 #include <sddl.h>
+#include <string>
 
 #define DIRECTINPUT_VERSION 0x0800 
 #include <dinput.h>

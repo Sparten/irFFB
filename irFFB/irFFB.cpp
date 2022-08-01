@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "shlwapi.h"
 #include <Hidclass.h>
 #include <uxtheme.h>
+#include <intrin.h>
 #define MAX_LOADSTRING 100
 
 #define STATUS_CONNECTED_PART 0
@@ -392,8 +393,16 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
         if (settings.getFfbType() == FFBTYPE_DIRECT_FILTER_720) {
 
             prod[0] = s * firc12[0];
-
-            _asm {
+            {
+                __m128 mp0 = _mm_load_ps(prod);
+                __m128 mp1 = _mm_load_ps(prod + 4);
+                __m128 mp2 = _mm_load_ps(prod + 8);
+                mp0 = _mm_add_ps(_mm_add_ps(mp0, mp1), mp2);
+                mp0 = _mm_hadd_ps(mp0, mp0);
+                mp0 = _mm_hadd_ps(mp0, mp0);
+                r = _mm_cvttss_si32(mp0);
+            }
+            /*_asm {
                 movaps xmm0, xmmword ptr prod
                 movaps xmm1, xmmword ptr prod+16
                 movaps xmm2, xmmword ptr prod+32
@@ -403,7 +412,7 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
                 haddps xmm0, xmm0
                 cvttss2si eax, xmm0
                 mov dword ptr r, eax
-            }
+            }*/
 
             if (use360)
                 r += scaleTorque(lastSuspForce + (suspForceST[0] - lastSuspForce) / 2.0f);
@@ -415,7 +424,16 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
             for (int i = 1; i < DIRECT_INTERP_SAMPLES * 2 - 1; i++) {
 
                 prod[i] = s * firc12[i];
-
+                {
+                    __m128 mp0 = _mm_load_ps(prod);
+                    __m128 mp1 = _mm_load_ps(prod + 4);
+                    __m128 mp2 = _mm_load_ps(prod + 8);
+                    mp0 = _mm_add_ps(_mm_add_ps(mp0, mp1), mp2);
+                    mp0 = _mm_hadd_ps(mp0, mp0);
+                    mp0 = _mm_hadd_ps(mp0, mp0);
+                    r = _mm_cvttss_si32(mp0);
+                }
+                /*
                 _asm {
                     movaps xmm0, xmmword ptr prod
                     movaps xmm1, xmmword ptr prod + 16
@@ -427,7 +445,7 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
                     cvttss2si eax, xmm0
                     mov dword ptr r, eax
                 }
-
+                */
                 int idx = (i - 1) >> 1;
                 bool odd = i & 1;
 
@@ -454,7 +472,14 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
             }
 
             prod[DIRECT_INTERP_SAMPLES * 2 - 1] = s * firc12[DIRECT_INTERP_SAMPLES * 2 - 1];
-            _asm {
+            __m128 mp0 = _mm_load_ps(prod);
+            __m128 mp1 = _mm_load_ps(prod + 4);
+            __m128 mp2 = _mm_load_ps(prod + 8);
+             mp0 = _mm_add_ps(_mm_add_ps(mp0, mp1), mp2);
+             mp0 = _mm_hadd_ps(mp0, mp0);
+             mp0 = _mm_hadd_ps(mp0, mp0);
+            r = _mm_cvttss_si32(mp0);
+            /*_asm {
                 movaps xmm0, xmmword ptr prod
                 movaps xmm1, xmmword ptr prod + 16
                 movaps xmm2, xmmword ptr prod + 32
@@ -464,7 +489,7 @@ DWORD WINAPI directFFBThread(LPVOID lParam) {
                 haddps xmm0, xmm0
                 cvttss2si eax, xmm0
                 mov dword ptr r, eax
-            }
+            }*/
 
             if (use360)
                 r += scaleTorque(suspForceST[DIRECT_INTERP_SAMPLES - 1]);
@@ -710,7 +735,7 @@ int APIENTRY wWinMain(
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
     LoadStringW(hInstance, IDC_IRFFB, szWindowClass, MAX_LOADSTRING);
     MyRegisterClass(hInstance);
-    MyOverLayRegisterClass(hInstance);
+
     // Setup DI FFB effect
     pforce.dwMagnitude = 0;
     pforce.dwPeriod = INFINITE;
@@ -784,11 +809,11 @@ int APIENTRY wWinMain(
     }
     if (RegisterHotKey(mainWnd, 1, MOD_ALT | MOD_CONTROL | MOD_NOREPEAT, VK_UP))  
     {
-        text(L"Hotkey 'ALT + CONTROL + UP' registered, Max force --");
+        text(L"Max force+ Hotkey 'ALT + CONTROL + UP' registered");
     }
     if (RegisterHotKey(mainWnd, 2, MOD_ALT | MOD_CONTROL | MOD_NOREPEAT, VK_DOWN))
     {
-        text(L"Hotkey 'ALT + CONTROL + DOWN' registered, Max force ++");
+        text(L"Max force- Hotkey 'ALT + CONTROL + DOWN' registered");
     }
 
     //int posX = settings.getWindowPosX();
@@ -1002,7 +1027,33 @@ int APIENTRY wWinMain(
 
                         if (ffbType != FFBTYPE_DIRECT_FILTER || use360) {
 
-                            __asm {
+                            __m128 xmm0 = _mm_loadu_ps(LFshockDeflST);
+                            __m128 xmm1 = _mm_loadu_ps(LFshockDeflST);
+                            __m128 xmm2 = _mm_load_ps(LFshockDeflST);
+                            __m128 xmm3 = _mm_load_ps(RFshockDeflST);
+                            xmm0 = (__m128)_mm_castsi128_ps(_mm_slli_si128(_mm_castps_si128(xmm0), 4));
+                            __m128 xmm4 = _mm_load_ss(&LFshockDeflLast);
+                            xmm1 = (__m128)_mm_castsi128_ps(_mm_slli_si128(_mm_castps_si128(xmm1), 4));
+                            __m128 xmm5 = _mm_load_ss(&RFshockDeflLast);
+                            xmm0 = _mm_move_ss(xmm0, xmm4);
+                            xmm2 = _mm_sub_ps(xmm2, xmm0);
+                            xmm1 = _mm_move_ss(xmm1, xmm5);
+                            xmm3 = _mm_sub_ps(xmm3, xmm1);
+                            xmm4 = _mm_loadu_ps((float*)LFshockDeflST + 12);                         
+                            xmm1 = _mm_loadl_pi(xmm1, (const __m64*)LFshockDeflST + 16);
+                            xmm1 = _mm_sub_ps(xmm1, xmm4);
+                            xmm5 = _mm_loadu_ps((float*)RFshockDeflST + 12);
+                            xmm0 = _mm_loadl_pi(xmm0, (const __m64*)LFshockDeflST + 16);
+                            xmm0 = _mm_sub_ps(xmm0, xmm4);
+                            xmm3 = _mm_load_ss(&bumpsFactor);
+                            xmm1 = _mm_sub_ps(xmm1, xmm0);
+                            xmm3 = _mm_unpacklo_ps(xmm3, xmm3);
+                            xmm3 = _mm_unpacklo_ps(xmm3, xmm3);
+                            xmm2 = _mm_mul_ps(xmm2, xmm3);
+                            xmm1 = _mm_mul_ps(xmm1, xmm3);
+                            _mm_store_ps((float*)suspForceST, xmm2);
+                            _mm_storel_pi((__m64*)suspForceST + 16, xmm1);
+                            /*_asm {
                                 mov eax, LFshockDeflST
                                 mov ecx, RFshockDeflST
                                 movups xmm0, xmmword ptr [eax]
@@ -1056,7 +1107,7 @@ int APIENTRY wWinMain(
                                 // write
                                 movaps xmmword ptr suspForceST[0], xmm2
                                 movlps qword ptr suspForceST[16], xmm1
-                            }
+                            }*/
         
                         }
                         else {
@@ -1078,7 +1129,27 @@ int APIENTRY wWinMain(
                     if (CFshockDeflLast != -10000.0f) {
                     
                         if (ffbType != FFBTYPE_DIRECT_FILTER || use360)
-                            __asm {
+                        {
+                            __m128 xmm0 = _mm_loadu_ps(CFshockDeflST);
+                            __m128 xmm2 = _mm_load_ps(CFshockDeflST);
+                            __m128 xmm3 = _mm_load_ss(&bumpsFactor);
+                            xmm0 = (__m128)_mm_castsi128_ps(_mm_slli_si128(_mm_castps_si128(xmm0), 4));
+                            __m128 xmm4 = _mm_load_ss(&CFshockDeflLast);
+                            xmm3 = _mm_unpacklo_ps(xmm3, xmm3);
+                            xmm0 = _mm_move_ss(xmm0, xmm4);                            
+                            xmm2 = _mm_sub_ps(xmm2, xmm0);
+                            xmm4 = _mm_loadu_ps((float*)CFshockDeflST + 12);
+                            __m128 xmm1 = _mm_loadl_pi(xmm1, (const __m64*)CFshockDeflST + 16);
+                            xmm3 = _mm_unpacklo_ps(xmm3, xmm3);
+                            xmm1 = _mm_sub_ps(xmm1, xmm4);
+                            xmm2 = _mm_mul_ps(xmm2, xmm3);
+                            xmm1 = _mm_mul_ps(xmm1, xmm3);
+                            _mm_store_ps((float*)suspForceST, xmm2);
+                            _mm_storel_pi((__m64*)suspForceST + 16, xmm1);
+                        }
+
+
+                            /*__asm {
                                 mov eax, CFshockDeflST
                                 movups xmm0, xmmword ptr[eax]
                                 // xmm3 = bumpsFactor
@@ -1104,7 +1175,8 @@ int APIENTRY wWinMain(
                                 mulps xmm1, xmm3
                                 movaps xmmword ptr suspForceST[0], xmm2
                                 movlps qword ptr suspForceST[16], xmm1
-                            }
+
+                            }*/
                         else 
                             suspForce = (CFshockDeflST[STmaxIdx] - CFshockDeflLast) * bumpsFactor * 0.25f;
 
@@ -1314,12 +1386,14 @@ ATOM MyOverLayRegisterClass(HINSTANCE hInstance) {
     wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_IRFFB));
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 2);
-    wcex.lpszClassName = L"irFFbOverlay";
+    wcex.lpszClassName = szWindowClass;
     wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
     return RegisterClassExW(&wcex);
 
 }
+
+
 LRESULT CALLBACK EditWndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR subId, DWORD_PTR rData) {
 
     if (msg == WM_CHAR) {
@@ -1380,6 +1454,11 @@ LRESULT CALLBACK EditWndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam, U
     return DefSubclassProc(wnd, msg, wParam, lParam);
 
 }
+bool CALLBACK SetFont(HWND child, LPARAM font) {
+    SendMessage(child, WM_SETFONT, font, true);
+    return true;
+}
+
 
 HWND combo(HWND parent, wchar_t *name, int x, int y) {
 
@@ -1392,7 +1471,7 @@ HWND combo(HWND parent, wchar_t *name, int x, int y) {
         CreateWindow(
             L"COMBOBOX", nullptr,
             CBS_DROPDOWNLIST | WS_CHILD | WS_VISIBLE | WS_OVERLAPPED | WS_TABSTOP,
-            x + 12, y + 26, 300, 240, parent, nullptr, hInst, nullptr
+            x, y + 20, 265, 240, parent, nullptr, hInst, nullptr
         );
 
 }
@@ -1404,13 +1483,13 @@ sWins_t *slider(HWND parent, wchar_t *name, int x, int y, wchar_t *start, wchar_
     wins->label = CreateWindowW(
         L"STATIC", name,
         WS_CHILD | WS_VISIBLE,
-        x, y, 300, 20, parent, NULL, hInst, NULL
+        x, y, 100, 14, parent, NULL, hInst, NULL
     );
 
     wins->value = CreateWindowW(
         L"EDIT", L"", 
         WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_CENTER,
-        x + 210, y, 50, 20, parent, NULL, hInst, NULL
+        x + 220, y, 45, 18, parent, NULL, hInst, NULL
     );
 
     SetWindowSubclass(wins->value, EditWndProc, floatData ? 1 : 0, 0);
@@ -1420,7 +1499,7 @@ sWins_t *slider(HWND parent, wchar_t *name, int x, int y, wchar_t *start, wchar_
     wins->trackbar = CreateWindowExW(
         0, TRACKBAR_CLASS, name,
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_TOOLTIPS | TBS_TRANSPARENTBKGND,
-        x + 40, y + 26, 240, 30,
+        x + 40, y + 18, 170, 20,
         parent, NULL, hInst, NULL
     );
 
@@ -1432,14 +1511,14 @@ sWins_t *slider(HWND parent, wchar_t *name, int x, int y, wchar_t *start, wchar_
     HWND buddyLeft = CreateWindowEx(
         0, L"STATIC", start,
         SS_LEFT | WS_CHILD | WS_VISIBLE,
-        0, 0, 40, 20, parent, NULL, hInst, NULL
+        0, 0, 40, 15, parent, NULL, hInst, NULL
     );
     SendMessage(wins->trackbar, TBM_SETBUDDY, (WPARAM)TRUE, (LPARAM)buddyLeft);
 
     HWND buddyRight = CreateWindowEx(
         0, L"STATIC", end,
         SS_RIGHT | WS_CHILD | WS_VISIBLE,
-        0, 0, 52, 20, parent, NULL, hInst, NULL
+        0, 0, 52, 15, parent, NULL, hInst, NULL
     );
     SendMessage(wins->trackbar, TBM_SETBUDDY, (WPARAM)FALSE, (LPARAM)buddyRight);
     
@@ -1457,20 +1536,19 @@ HWND slider(HWND parent, wchar_t* name, int x, int y, int width, int height, int
     );
 
     SendMessage(slider, TBM_SETRANGE, (WPARAM)TRUE, MAKELONG(start, end));
-
     return slider;
 
 }
 
 HWND checkbox(HWND parent, wchar_t *name, int x, int y, int width = 360, int height = 20) {
 
-    return 
-        CreateWindowEx(
-            0, L"BUTTON", name,
-            BS_CHECKBOX | BS_MULTILINE | WS_CHILD | WS_TABSTOP | WS_VISIBLE,
-            x, y, width, height, parent, nullptr, hInst, nullptr
-        );
-
+    HWND whd = CreateWindowEx(
+        0, L"BUTTON", name,
+        BS_CHECKBOX | BS_MULTILINE | WS_CHILD | WS_TABSTOP | WS_VISIBLE,
+        x, y, width, height, parent, nullptr, hInst, nullptr
+    );
+    
+    return whd;
 }
 
 HWND groupox(HWND parent, wchar_t* name, int x, int y, int width, int height) {
@@ -1535,11 +1613,13 @@ void DeActivateOverlayWindow()
     SetLayeredWindowAttributes(overlayWnd, 0, settings.getOverlayTransparency(), LWA_ALPHA);
 }
 
-void CreateOverlayWindow()
+void CreateOverlayWindow(HINSTANCE hInstance)
 {
+    //MyOverLayRegisterClass(hInstance);
+
     DWORD extendedStyle = WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOPMOST;
     overlayWnd = CreateWindowExW(extendedStyle,
-        L"irFFbOverlay", L"irFFb Overlay",
+        szWindowClass, L"irFFb Overlay",
         WS_VISIBLE | WS_POPUP,
         //WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME,
         CW_USEDEFAULT, CW_USEDEFAULT, 200, OVERLAY_WINDOW_HEIGHT,
@@ -1556,10 +1636,9 @@ void CreateOverlayWindow()
     SetWindowSubclass(clippingForceOverlayWnd, myNcHitTest, 0, 0);
 
     SetLayeredWindowAttributes(overlayWnd, 0, 255, LWA_ALPHA);
-
+    SetMenu(overlayWnd, NULL);
     ShowWindow(overlayWnd, SW_HIDE);
     UpdateWindow(overlayWnd);
-
 }
 
 
@@ -1572,13 +1651,13 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     mainWnd = CreateWindowW(
         szWindowClass, szTitle,
         WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME,
-        CW_USEDEFAULT, CW_USEDEFAULT, 864, 780,
+        CW_USEDEFAULT, CW_USEDEFAULT, 694, 640,
         NULL, NULL, hInst, NULL
     );
 
     if (!mainWnd)
         return FALSE;
-    CreateOverlayWindow();
+    
 
     memset(&niData, 0, sizeof(niData));
     niData.uVersion = NOTIFYICON_VERSION;
@@ -1589,69 +1668,70 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     niData.uCallbackMessage = WM_TRAY_ICON;
     niData.hIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_SMALL));
     
-
+    //left side UI
     settings.setDevWnd(combo(mainWnd, L"FFB device:", 44, 20));
-    settings.setFfbWnd(combo(mainWnd, L"FFB type:", 44, 80));
-    settings.setMinWnd(slider(mainWnd, L"Min force:", 44, 154, L"0", L"20", false));
-    settings.setMaxWnd(slider(mainWnd, L"Max force:", 44, 226, L"5 Nm", L"65 Nm", false));
-    settings.setDampingWnd(slider(mainWnd, L"Damping:", 44, 298, L"0", L"100", true));
+    settings.setFfbWnd(combo(mainWnd, L"FFB type:", 44, 70));
+    settings.setMinWnd(slider(mainWnd, L"Min force:", 44, 130, L"0", L"20", false));
+    settings.setMaxWnd(slider(mainWnd, L"Max force:", 44, 170, L"5 Nm", L"65 Nm", false));
+    settings.setDampingWnd(slider(mainWnd, L"Damping:", 44, 210, L"0", L"100", true));
 
-    auto groupoxWnd = groupox(mainWnd, L"Understeer Effect:", 444, 20, 380, 260);
-    settings.setUndersteerWnd(slider(mainWnd, L"Understeer:", 464, 40, L"0", L"100", true));
-    settings.setUndersteerOffsetWnd(slider(mainWnd, L"Understeer offset:", 464, 100, L"0", L"100", true));    
-    settings.setUndersteerYawRateMultWnd(slider(mainWnd, L"Force multiplier:", 464, 160, L"0", L"60", true));
-    settings.setUndersteerlatAccelDivWnd(slider(mainWnd, L"Release force:", 464, 220, L"60", L"130", true));
+    groupox(mainWnd, L"Overlay:", 32, 250, 295, 110);
+    settings.setForceOverlayWnd(checkbox(mainWnd, L"Show overlay?", 44, 270, 180));
+    overlayMoveWnd = checkbox(mainWnd, L"Enable input?", 44, 290, 180);
+    EnableWindow(overlayMoveWnd, FALSE);
 
-    settings.setBumpsWnd(slider(mainWnd, L"Suspension bumps:", 464, 290, L"0", L"100", true));   
-    settings.setSopWnd(slider(mainWnd, L"SoP effect:", 464, 350, L"0", L"100", true));
-    settings.setSopOffsetWnd(slider(mainWnd, L"SoP offset:", 464, 410, L"0", L"100", true));
-    settings.setUse360Wnd(checkbox(mainWnd, L" Use 360 Hz telemetry for suspension effects\r\n in direct modes?", 460, 470, 360, 38));
-
-    settings.setCarSpecificWnd(
-        checkbox(mainWnd, L" Use car specific settings?", 460, 510)
-    );
-    settings.setReduceWhenParkedWnd(
-        checkbox(mainWnd, L" Reduce force when parked?", 460, 540)
-    );
-    settings.setRunOnStartupWnd(
-        checkbox(mainWnd, L" Run on startup?", 460, 570)
-    );
-    settings.setStartMinimisedWnd(
-        checkbox(mainWnd, L" Start minimised?", 460, 600)
-    );
-    settings.setDebugWnd(
-        checkbox(mainWnd, L"Debug logging?", 460, 630)
-    );
-
-    currentForceWnd = progressbar(mainWnd, L"Current applied force", 32, 645, 300, 20, IR_MAX);
-    clippingForceWnd = progressbar(mainWnd, L"Clipping force", 300, 645, 110, 20, progressClippingMax);
-
-    SendMessage(clippingForceWnd, PBM_SETSTATE, PBST_ERROR, 0);
-
-    groupox(mainWnd, L"Overlay:", 32, 500, 377, 140);
-    settings.setForceOverlayWnd(checkbox(mainWnd, L"Show overlay?", 40, 520, 180));
-    overlayMoveWnd = checkbox(mainWnd, L"Enable input?", 40, 550, 180);
-    EnableWindow(overlayMoveWnd,FALSE);
-    
-    settings.setOverlayTransparencyWnd(slider(mainWnd, L"Overlay transparency:", 44, 580, L"0", L"255", false));
-
-    int statusParts[] = { 256, 424, 864 };
+    settings.setOverlayTransparencyWnd(slider(mainWnd, L"Overlay transparency:", 44, 310, L"0", L"255", false));
 
     statusWnd = CreateWindowEx(
         0, STATUSCLASSNAME, NULL,
         WS_CHILD | WS_VISIBLE,
         0, 0, 0, 0, mainWnd, NULL, hInst, NULL
     );
-    SendMessage(statusWnd, SB_SETPARTS, 3, LPARAM(statusParts));
-    
+
     textWnd = CreateWindowEx(
         WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_VISIBLE | WS_VSCROLL | WS_CHILD | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL,
-        32, 372, 376, 120,
+        32, 370, 295, 120,
         mainWnd, NULL, hInst, NULL
     );
     SendMessage(textWnd, EM_SETLIMITTEXT, WPARAM(256000), 0);
-    
+    //right side UI 
+    auto groupoxWnd = groupox(mainWnd, L"Understeer Effect:", 344, 20, 295, 210);
+    settings.setUndersteerWnd(slider(mainWnd, L"Understeer:", 364, 50, L"0", L"100", true));
+    settings.setUndersteerOffsetWnd(slider(mainWnd, L"Offset:", 364, 90, L"0", L"100", true));    
+    settings.setUndersteerYawRateMultWnd(slider(mainWnd, L"Force multiplier:", 364, 130, L"0", L"60", true));
+    settings.setUndersteerlatAccelDivWnd(slider(mainWnd, L"Release force:", 364, 170, L"60", L"130", true));
+
+    settings.setBumpsWnd(slider(mainWnd, L"Suspension bumps:", 364, 240, L"0", L"100", true));   
+    settings.setSopWnd(slider(mainWnd, L"SoP effect:", 364, 280, L"0", L"100", true));
+    settings.setSopOffsetWnd(slider(mainWnd, L"SoP offset:", 364, 320, L"0", L"100", true));
+    settings.setUse360Wnd(checkbox(mainWnd, L"Use 360 Hz telemetry for suspension effects\r\n in direct modes?", 360, 360, 300, 38));
+
+    settings.setCarSpecificWnd(
+        checkbox(mainWnd, L"Use car specific settings?", 360, 395)
+    );
+    settings.setReduceWhenParkedWnd(
+        checkbox(mainWnd, L"Reduce force when parked?", 360, 415)
+    );
+    settings.setRunOnStartupWnd(
+        checkbox(mainWnd, L"Run on startup?", 360, 435)
+    );
+    settings.setStartMinimisedWnd(
+        checkbox(mainWnd, L"Start minimised?", 360, 455)
+    );
+    settings.setDebugWnd(
+        checkbox(mainWnd, L"Debug logging?", 360, 475)
+    );
+
+    //spanning UI
+    currentForceWnd = progressbar(mainWnd, L"Current applied force", 32, 500, 480, 20, IR_MAX);
+    clippingForceWnd = progressbar(mainWnd, L"Clipping force", 480, 500, 160, 20, progressClippingMax);
+
+    SendMessage(clippingForceWnd, PBM_SETSTATE, PBST_ERROR, 0);
+
+    int statusParts[] = { 256, 424, 864 };
+    SendMessage(statusWnd, SB_SETPARTS, 3, LPARAM(statusParts));
+      
     ShowWindow(mainWnd, SW_HIDE);
     UpdateWindow(mainWnd);
 
@@ -1660,6 +1740,14 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     devFilter.dbcc_size = sizeof(devFilter);
     devFilter.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
     RegisterDeviceNotificationW(mainWnd, &devFilter, DEVICE_NOTIFY_WINDOW_HANDLE);
+    
+    CreateOverlayWindow(hInstance);
+
+    HFONT hFont = CreateFont(14, 0, 0, 0, FW_DONTCARE | FW_SEMIBOLD, FALSE, FALSE, FALSE, ANSI_CHARSET,
+        OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE, TEXT("Microsoft Sans Serif"));
+
+    EnumChildWindows(mainWnd, (WNDENUMPROC)SetFont, (LPARAM)hFont);
 
     return TRUE;
 
@@ -2426,7 +2514,7 @@ inline void sleepSpinUntil(PLARGE_INTEGER base, UINT sleep, UINT offset) {
 
         QueryPerformanceCounter(&time);
         while (time.QuadPart < until) {
-            _asm { pause };
+            _mm_pause();
             QueryPerformanceCounter(&time);
             // i++;
         }

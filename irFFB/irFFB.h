@@ -21,27 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "stdafx.h"
 #include "irsdk_defines.h"
 
-#ifdef _UNICODE
 
-#if defined _M_IX86
-
-#pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='x86' publicKeyToken='6595b64144ccf1df' language='*'\"")
-
-#elif defined _M_IA64
-
-#pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='ia64' publicKeyToken='6595b64144ccf1df' language='*'\"")
-
-#elif defined _M_X64
-
-#pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='amd64' publicKeyToken='6595b64144ccf1df' language='*'\"")
-
-#else
-
-#pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
-
-#endif
-
-#endif
 
 #define MAX_FFB_DEVICES 16
 #define DI_MAX 10000
@@ -143,11 +123,12 @@ DWORD WINAPI readWheelThread(LPVOID);
 DWORD WINAPI directFFBThread(LPVOID);
 
 ATOM MyRegisterClass(HINSTANCE);
-ATOM MyOverLayRegisterClass(HINSTANCE);
 
 BOOL InitInstance(HINSTANCE, int);
 LRESULT CALLBACK myNcHitTest(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
+LRESULT CALLBACK myPaint(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK WndProcOverlay(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK About(HWND, UINT, WPARAM, LPARAM);
 
 HWND combo(HWND, wchar_t *, int, int); 

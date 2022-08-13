@@ -731,8 +731,13 @@ int APIENTRY wWinMain(
 	InitCommonControlsEx(&ccEx);
 
 	HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_IRFFB));
-
+#ifdef _M_X64
+	LoadStringW(hInstance, IDS_APP_TITLE_64, szTitle, MAX_LOADSTRING);
+#else// _M_X64
 	LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
+#endif
+
+
 	LoadStringW(hInstance, IDC_IRFFB, szWindowClass, MAX_LOADSTRING);
 	MyRegisterClass(hInstance);
 
@@ -1028,7 +1033,7 @@ int APIENTRY wWinMain(
 						if (ffbType != FFBTYPE_DIRECT_FILTER || use360) {
 
 							__m128 xmm0 = _mm_loadu_ps(LFshockDeflST);
-							__m128 xmm1 = _mm_loadu_ps(LFshockDeflST);
+							__m128 xmm1 = _mm_loadu_ps(RFshockDeflST);
 							__m128 xmm2 = _mm_load_ps(LFshockDeflST);
 							__m128 xmm3 = _mm_load_ps(RFshockDeflST);
 							xmm0 = (__m128)_mm_castsi128_ps(_mm_slli_si128(_mm_castps_si128(xmm0), 4));
@@ -1043,7 +1048,7 @@ int APIENTRY wWinMain(
 							xmm1 = _mm_loadl_pi(xmm1, (const __m64*)LFshockDeflST + 16);
 							xmm1 = _mm_sub_ps(xmm1, xmm4);
 							xmm5 = _mm_loadu_ps((float*)RFshockDeflST + 12);
-							xmm0 = _mm_loadl_pi(xmm0, (const __m64*)LFshockDeflST + 16);
+							xmm0 = _mm_loadl_pi(xmm0, (const __m64*)RFshockDeflST + 16);
 							xmm0 = _mm_sub_ps(xmm0, xmm4);
 							xmm3 = _mm_load_ss(&bumpsFactor);
 							xmm1 = _mm_sub_ps(xmm1, xmm0);
@@ -1054,12 +1059,19 @@ int APIENTRY wWinMain(
 							_mm_store_ps((float*)suspForceST, xmm2);
 							_mm_storel_pi((__m64*)suspForceST + 16, xmm1);
 						}
-						else {
+						else  if (bumpsFactor != 0.0f) {
 							suspForce =
 								(
 									(LFshockDeflST[STmaxIdx] - LFshockDeflLast) -
 									(RFshockDeflST[STmaxIdx] - RFshockDeflLast)
 									) * bumpsFactor * 0.25f;
+						}
+						else {
+							suspForce =
+							(
+								(LFshockDeflST[STmaxIdx] - LFshockDeflLast) -
+								(RFshockDeflST[STmaxIdx] - RFshockDeflLast)
+								);
 						}
 
 					}
@@ -1068,7 +1080,7 @@ int APIENTRY wWinMain(
 					LFshockDeflLast = LFshockDeflST[STmaxIdx];
 
 				}
-				else if (CFshockDeflST != nullptr && bumpsFactor != 0) {
+				else if (CFshockDeflST != nullptr && bumpsFactor != 0.0f) {
 
 					if (CFshockDeflLast != -10000.0f) {
 
@@ -1091,8 +1103,10 @@ int APIENTRY wWinMain(
 							_mm_store_ps((float*)suspForceST, xmm2);
 							_mm_storel_pi((__m64*)suspForceST + 16, xmm1);
 						}
-						else
+						else if(bumpsFactor != 0.0f)
 							suspForce = (CFshockDeflST[STmaxIdx] - CFshockDeflLast) * bumpsFactor * 0.25f;
+						else
+							CFshockDeflLast = CFshockDeflST[STmaxIdx];
 
 					}
 
@@ -1285,28 +1299,6 @@ ATOM MyRegisterClass(HINSTANCE hInstance) {
 	return RegisterClassExW(&wcex);
 
 }
-
-ATOM MyOverLayRegisterClass(HINSTANCE hInstance) {
-
-	WNDCLASSEXW wcex;
-
-	wcex.cbSize = sizeof(WNDCLASSEX);
-
-	wcex.style = CS_HREDRAW | CS_VREDRAW;
-	wcex.lpfnWndProc = WndProc;
-	wcex.cbClsExtra = 0;
-	wcex.cbWndExtra = 0;
-	wcex.hInstance = hInstance;
-	wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_IRFFB));
-	wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-	wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 2);
-	wcex.lpszClassName = szWindowClass;
-	wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
-
-	return RegisterClassExW(&wcex);
-
-}
-
 
 LRESULT CALLBACK EditWndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR subId, DWORD_PTR rData) {
 
@@ -1529,7 +1521,6 @@ void DeActivateOverlayWindow()
 
 void CreateOverlayWindow(HINSTANCE hInstance)
 {
-	//MyOverLayRegisterClass(hInstance);
 
 	DWORD extendedStyle = WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOPMOST;
 	overlayWnd = CreateWindowExW(extendedStyle,
@@ -1548,6 +1539,7 @@ void CreateOverlayWindow(HINSTANCE hInstance)
 
 	SetWindowSubclass(currentForceOverlayWnd, myNcHitTest, 0, 0);
 	SetWindowSubclass(clippingForceOverlayWnd, myNcHitTest, 0, 0);
+	SetWindowSubclass(overlayWnd, myPaint, 0, 0);
 
 	SetLayeredWindowAttributes(overlayWnd, 0, 255, LWA_ALPHA);
 	SetMenu(overlayWnd, NULL);
@@ -1645,6 +1637,9 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 
 	int statusParts[] = { 256, 424, 864 };
 	SendMessage(statusWnd, SB_SETPARTS, 3, LPARAM(statusParts));
+
+	BOOL value = TRUE;
+	DwmSetWindowAttribute(mainWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
 
 	ShowWindow(mainWnd, SW_HIDE);
 	UpdateWindow(mainWnd);
@@ -1977,7 +1972,26 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 	return (INT_PTR)FALSE;
 
 }
-
+LRESULT CALLBACK myPaint(HWND hWnd, UINT uMsg, WPARAM wParam,
+	LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+{
+	switch (uMsg)
+	{
+		case WM_PAINT:
+		{
+			PAINTSTRUCT ps;
+			RECT rectangle;
+			HDC hdc = BeginPaint(hWnd, &ps);
+			SendMessage(hWnd, WM_ERASEBKGND, (WPARAM)GetDC(hWnd), NULL); /* Erases the background */
+			GetClientRect(hWnd, &rectangle); /* Gets the toolbar's area */
+			FillRect(GetDC(hWnd), &rectangle, (HBRUSH)(COLOR_WINDOW + 2)); /* Fills the toolbar's background white */
+			EndPaint(hWnd, &ps);
+			
+			break;
+		}	
+	}
+	return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+}
 LRESULT CALLBACK myNcHitTest(HWND hWnd, UINT uMsg, WPARAM wParam,
 	LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
 {

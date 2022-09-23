@@ -1086,6 +1086,7 @@ int APIENTRY wWinMain(
 
 						if (ffbType != FFBTYPE_DIRECT_FILTER || use360){
 
+							__m128 xmm1;
 							__m128 xmm0 = _mm_loadu_ps(CFshockDeflST);
 							__m128 xmm2 = _mm_load_ps(CFshockDeflST);
 							__m128 xmm3 = _mm_load_ss(&bumpsFactor);
@@ -1095,7 +1096,7 @@ int APIENTRY wWinMain(
 							xmm0 = _mm_move_ss(xmm0, xmm4);
 							xmm2 = _mm_sub_ps(xmm2, xmm0);
 							xmm4 = _mm_loadu_ps((float*)CFshockDeflST + 12);
-							__m128 xmm1 = _mm_loadl_pi(xmm1, (const __m64*)CFshockDeflST + 16);
+							xmm1 = _mm_loadl_pi(xmm1, (const __m64*)CFshockDeflST + 16);
 							xmm3 = _mm_unpacklo_ps(xmm3, xmm3);
 							xmm1 = _mm_sub_ps(xmm1, xmm4);
 							xmm2 = _mm_mul_ps(xmm2, xmm3);

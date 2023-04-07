@@ -250,7 +250,6 @@ DWORD WINAPI readWheelThread(LPVOID lParam) {
 		if (signaled == WAIT_OBJECT_0) {
 
 			res = ffdevice->GetDeviceState(sizeof(joyState), &joyState);
-			//
 			if (res != DI_OK) {
 				debug(L"GetDeviceState returned: 0x%x, requesting reacquire", res);
 				reacquireDIDevice();
@@ -2491,7 +2490,6 @@ inline int scaleTorque(float t) {
 
 inline void setFFB(int mag) {
 
-	//effect->Stop();
 	if (!effect)
 		return;
 

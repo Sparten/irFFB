@@ -287,7 +287,7 @@ DWORD WINAPI readWheelThread(LPVOID lParam) {
 				LeaveCriticalSection(&effectCrit);
 				continue;
 			}				
-
+			LeaveCriticalSection(&effectCrit);
 			if (settings.getDampingFactor() != 0.0f || nearStops) {
 
 				QueryPerformanceCounter(&time);

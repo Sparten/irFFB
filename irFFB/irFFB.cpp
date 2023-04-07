@@ -250,6 +250,7 @@ DWORD WINAPI readWheelThread(LPVOID lParam) {
 		if (signaled == WAIT_OBJECT_0) {
 
 			res = ffdevice->GetDeviceState(sizeof(joyState), &joyState);
+			//
 			if (res != DI_OK) {
 				debug(L"GetDeviceState returned: 0x%x, requesting reacquire", res);
 				reacquireDIDevice();
@@ -277,9 +278,16 @@ DWORD WINAPI readWheelThread(LPVOID lParam) {
 					*hats[i] = joyState.rgdwPOV[i];
 
 			UpdateVJD(vjDev, (PVOID)&vjData);
-
+			
 			if (effect == nullptr)
 				continue;
+
+			EnterCriticalSection(&effectCrit);
+			if (effect->Stop() != DI_OK)
+			{
+				LeaveCriticalSection(&effectCrit);
+				continue;
+			}				
 
 			if (settings.getDampingFactor() != 0.0f || nearStops) {
 
@@ -337,7 +345,7 @@ DWORD WINAPI readWheelThread(LPVOID lParam) {
 			continue;
 		}
 
-		HRESULT hr = effect->SetParameters(&dieff, DIEP_TYPESPECIFICPARAMS | DIEP_NORESTART);
+		HRESULT hr = effect->SetParameters(&dieff, DIEP_TYPESPECIFICPARAMS | DIEP_START);
 		if (hr != DI_OK) {
 			debug(L"SetParameters returned 0x%x, requesting reacquire", hr);
 			reacquireDIDevice();
@@ -801,11 +809,12 @@ int APIENTRY wWinMain(
 
 	winVer = GetRealOSVersion();
 
-	if (winVer.dwMajorVersion < 10 || (winVer.dwMajorVersion >= 10 && winVer.dwBuildNumber < 17134) || sleepSpin)
+	if (winVer.dwMajorVersion < 10 || (winVer.dwMajorVersion == 10 && winVer.dwBuildNumber < 17134) || sleepSpin)
 	{
 		settings.setUseAltTimer(true);
 		EnableWindow(settings.getAltTimerWnd(), FALSE);
 	}
+
 	if (settings.getShowForceOverlay())
 	{
 		SetLayeredWindowAttributes(overlayWnd, 0, settings.getOverlayTransparency(), LWA_ALPHA);
@@ -1024,9 +1033,8 @@ int APIENTRY wWinMain(
 
 				}
 
-				if (
-					LFshockDeflST != nullptr && RFshockDeflST != nullptr && bumpsFactor != 0.0f
-					) {
+				if (LFshockDeflST != nullptr && RFshockDeflST != nullptr && bumpsFactor != 0.0f) 
+				{
 
 					if (LFshockDeflLast != -10000.0f) {
 
@@ -1071,7 +1079,7 @@ int APIENTRY wWinMain(
 							(
 								(LFshockDeflST[STmaxIdx] - LFshockDeflLast) -
 								(RFshockDeflST[STmaxIdx] - RFshockDeflLast)
-								);
+								* 0.25f);
 						}
 
 					}
@@ -1579,7 +1587,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 	settings.setDevWnd(combo(mainWnd, L"FFB device:", 44, 20));
 	settings.setFfbWnd(combo(mainWnd, L"FFB type:", 44, 70));
 	settings.setMinWnd(slider(mainWnd, L"Min force:", 44, 130, L"0", L"20", false));
-	settings.setMaxWnd(slider(mainWnd, L"Max force:", 44, 170, L"5 Nm", L"65 Nm", false));
+	settings.setMaxWnd(slider(mainWnd, L"Max force:", 44, 170, L"5 Nm", L"100 Nm", false));
 	settings.setDampingWnd(slider(mainWnd, L"Damping:", 44, 210, L"0", L"100", true));
 
 	groupox(mainWnd, L"Overlay:", 32, 250, 295, 110);
@@ -2483,6 +2491,7 @@ inline int scaleTorque(float t) {
 
 inline void setFFB(int mag) {
 
+	//effect->Stop();
 	if (!effect)
 		return;
 

@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define IR_MAX 9996
 #define MINFORCE_MULTIPLIER 100
 #define MIN_MAXFORCE 5
-#define MAX_MAXFORCE 65
+#define MAX_MAXFORCE 100
 #define BUMPSFORCE_MULTIPLIER 1.6f
 #define LOADFORCE_MULTIPLIER 0.08f
 #define LONGLOAD_STDPOWER 4

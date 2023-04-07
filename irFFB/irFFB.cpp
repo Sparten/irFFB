@@ -281,13 +281,6 @@ DWORD WINAPI readWheelThread(LPVOID lParam) {
 			if (effect == nullptr)
 				continue;
 
-			EnterCriticalSection(&effectCrit);
-			if (effect->Stop() != DI_OK)
-			{
-				LeaveCriticalSection(&effectCrit);
-				continue;
-			}				
-			LeaveCriticalSection(&effectCrit);
 			if (settings.getDampingFactor() != 0.0f || nearStops) {
 
 				QueryPerformanceCounter(&time);
@@ -344,7 +337,7 @@ DWORD WINAPI readWheelThread(LPVOID lParam) {
 			continue;
 		}
 
-		HRESULT hr = effect->SetParameters(&dieff, DIEP_TYPESPECIFICPARAMS | DIEP_START);
+		HRESULT hr = effect->SetParameters(&dieff, DIEP_TYPESPECIFICPARAMS | DIEP_NORESTART);
 		if (hr != DI_OK) {
 			debug(L"SetParameters returned 0x%x, requesting reacquire", hr);
 			reacquireDIDevice();
